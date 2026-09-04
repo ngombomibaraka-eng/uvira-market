@@ -1425,6 +1425,124 @@
                 disponible: true }
         ];
 
+        function syncVendeursFromDB() {
+          const db = getUsersDB();
+          const vendeursDB = db.filter(u => u.role === 'vendeur' || u.role === 'admin');
+          
+          vendeursDB.forEach(u => {
+              if (!VEND.find(v => v.id === u.id)) {
+                  VEND.push({
+                      id: u.id,
+                      nom: u.nom || 'Vendeur',
+                      sexe: u.sexe || 'N/A',
+                      age: u.age || 30,
+                      tel: u.telephone || u.tel || '',
+                      province: u.province || 'Sud-Kivu',
+                      territoire: u.territoire || 'Uvira',
+                      quartier: u.quartier || '',
+                      avenue: u.avenue || '',
+                      photo: u.photo || null,
+                      note: u.note || 0,
+                      ventes: u.ventes || 0,
+                      boutique: u.boutique || (u.nom + ' Boutique'),
+                      devise: u.devise || 'FC',
+                      actif: u.actif !== false
+                  });
+              }
+          });
+          save();
+      }
+        // ===== GESTION DES VENDEURS DYNAMIQUES =====
+
+      function getVendeur(id) {
+          // 1. Chercher d'abord dans VEND (vendeurs statiques par défaut)
+          let v = VEND.find(x => x.id === id);
+          if (v) return { ...v };
+          
+          // 2. Chercher dans la base des utilisateurs inscrits
+          const db = getUsersDB();
+          const u = db.find(x => x.id === id);
+          
+          if (u) {
+              // Construire un objet vendeur à partir des données utilisateur
+              const vendeur = {
+                  id: u.id,
+                  nom: u.nom || 'Vendeur inconnu',
+                  sexe: u.sexe || 'N/A',
+                  age: u.age || 30,
+                  tel: u.telephone || u.tel || '',
+                  province: u.province || 'Sud-Kivu',
+                  territoire: u.territoire || 'Uvira',
+                  quartier: u.quartier || '',
+                  avenue: u.avenue || '',
+                  photo: u.photo || null,
+                  note: u.note || 0,
+                  ventes: u.ventes || 0,
+                  boutique: u.boutique || (u.nom ? u.nom + ' Boutique' : 'Boutique'),
+                  devise: u.devise || 'FC',
+                  actif: u.actif !== false
+              };
+              
+              // Ajouter à VEND pour les futures recherches (cache)
+              if (!VEND.find(x => x.id === id)) {
+                  VEND.push(vendeur);
+                  save();
+              }
+              
+              return vendeur;
+          }
+          
+          // 3. Si toujours pas trouvé, créer un vendeur temporaire à partir des messages
+          // Chercher dans les messages pour trouver des infos sur ce vendeur
+          const msgFrom = S.msgs.find(m => m.from === id && m.fromN);
+          if (msgFrom) {
+              const vendeur = {
+                  id: id,
+                  nom: msgFrom.fromN || 'Vendeur',
+                  sexe: 'N/A',
+                  age: 30,
+                  tel: '',
+                  province: 'Sud-Kivu',
+                  territoire: 'Uvira',
+                  quartier: '',
+                  avenue: '',
+                  photo: msgFrom.fromPh || null,
+                  note: 0,
+                  ventes: 0,
+                  boutique: (msgFrom.fromN || 'Boutique'),
+                  devise: 'FC',
+                  actif: true
+              };
+              
+              // Ajouter à VEND
+              if (!VEND.find(x => x.id === id)) {
+                  VEND.push(vendeur);
+                  save();
+              }
+              
+              return vendeur;
+          }
+          
+          // 4. En dernier recours, retourner un vendeur par défaut
+          return {
+              id: id || 0,
+              nom: 'Vendeur',
+              sexe: 'N/A',
+              age: 30,
+              tel: '',
+              province: 'Sud-Kivu',
+              territoire: 'Uvira',
+              quartier: '',
+              avenue: '',
+              photo: null,
+              note: 0,
+              ventes: 0,
+              boutique: 'Boutique Uvira',
+              devise: 'FC',
+              actif: true
+          };
+      }
+
         function genProds() {
             const R = [
                 { n: "Manioc frais", c: 1, p: 500, u: "tas", d: "Manioc frais de qualité supérieure, récolté ce matin à Kasenga. Idéal pour le fufu.",
@@ -1884,37 +2002,461 @@
         }
 
         function getIAResponse(msg) {
-            const m = msg.toLowerCase();
-            if (m.includes('bonjour') || m.includes('salut')) {
-                return '👋 Bonjour ! Comment puis-je vous aider aujourd\'hui ?';
-            }
-            if (m.includes('produit') || m.includes('acheter') || m.includes('catalogue')) {
-                return '🛍️ Vous pouvez parcourir notre catalogue complet en cliquant sur "Catalogue" dans le menu. Vous y trouverez des produits d\'agriculture, élevage, pêche, mode, électronique et bien plus encore !';
-            }
-            if (m.includes('commande') || m.includes('panier')) {
-                return '📦 Pour passer une commande : ajoutez des produits au panier, puis cliquez sur "Commander". Vous serez guidé pour finaliser votre commande. Important : une commande ne peut contenir que des produits d\'un seul vendeur.';
-            }
-            if (m.includes('vendeur') || m.includes('boutique')) {
-                return '🏪 Les vendeurs sont des commerçants locaux d\'Uvira et ses environs. Chaque produit affiche le nom et la boutique du vendeur. Vous pouvez discuter directement avec eux via la messagerie après une commande.';
-            }
-            if (m.includes('paiement') || m.includes('payer')) {
-                return '💳 Les paiements se font via Mobile Money (Airtel Money, Orange Money, M-Pesa). Le vendeur vous confirmera la réception du paiement dans la messagerie.';
-            }
-            if (m.includes('livraison') || m.includes('livreur')) {
-                return '🚚 La livraison est assurée par nos livreurs partenaires. Après confirmation de votre commande, un livreur vous sera assigné et vous pourrez suivre la livraison en temps réel via la messagerie.';
-            }
-            if (m.includes('inscription') || m.includes('compte') || m.includes('créer')) {
-                return '📝 Pour créer un compte, cliquez sur "S\'inscrire" dans le menu. Vous aurez besoin d\'un nom, email, téléphone et mot de passe. Les vendeurs doivent fournir des informations supplémentaires sur leur boutique.';
-            }
-            if (m.includes('aide') || m.includes('support')) {
-                return '🆘 Besoin d\'aide ? Contactez-nous à support@uviramarket.cd ou appelez le +243 837 373 464. Notre équipe est disponible 24h/24.';
-            }
-            if (m.includes('merci')) {
-                return '🙏 Je vous en prie ! N\'hésitez pas si vous avez d\'autres questions.';
-            }
-            return '🤔 Je ne suis pas sûr de comprendre. Voici ce que je peux faire :\n• Vous aider à trouver des produits\n• Expliquer le processus de commande\n• Vous informer sur les paiements et livraisons\n• Vous guider pour l\'inscription\nPosez votre question plus clairement ou contactez notre support.';
-        }
-
+          const m = msg.toLowerCase().trim();
+          
+          // ===== SALUTATIONS =====
+          if (m.includes('bonjour') || m.includes('salut') || m.includes('coucou') || m.includes('hello') || m.includes('hey')) {
+              return '👋 Bonjour ! Je suis l\'assistant d\'UviraMarket, le marché numérique d\'Uvira 2026. Comment puis-je vous aider aujourd\'hui ? N\'hésitez pas à me poser des questions sur les produits, les commandes, les vendeurs, les paiements ou tout autre sujet !';
+          }
+          
+          // ===== PRÉSENTATION DE LA PLATEFORME =====
+          if (m.includes('quoi') || m.includes('c\'est quoi') || m.includes('qu\'est-ce') || m.includes('présentation') || m.includes('plateforme')) {
+              return '🏪 **UviraMarket** est le premier marché numérique multi-vendeurs d\'Uvira, Sud-Kivu, RDC — année 2026.\n\n' +
+                    '🎯 **Objectif** : Permettre aux agriculteurs, pêcheurs, éleveurs, artisans et commerçants de vendre leurs produits localement.\n\n' +
+                    '✨ **Fonctionnalités principales** :\n' +
+                    '• Catalogue de produits par catégorie\n' +
+                    '• Panier avec total automatique en FC et USD\n' +
+                    '• Messagerie en temps réel avec vendeurs et livreurs\n' +
+                    '• Gestion des commandes et livraisons\n' +
+                    '• Paiement Mobile Money (Airtel Money, Orange Money, M-Pesa)\n' +
+                    '• Dashboard pour vendeurs et administrateurs\n\n' +
+                    '📱 Accédez-y depuis votre smartphone ou ordinateur !';
+          }
+          
+          // ===== FONCTIONNEMENT GÉNÉRAL =====
+          if (m.includes('marche') || m.includes('comment ça marche') || m.includes('fonctionne') || m.includes('processus')) {
+              return '📋 **Comment utiliser UviraMarket en 5 étapes :**\n\n' +
+                    '1️⃣ **Parcourir** : Explorez le catalogue par catégories (Agriculture, Élevage, Pêche, Mode, etc.)\n\n' +
+                    '2️⃣ **Aimer** : Cliquez sur le ❤️ pour sauvegarder vos produits préférés\n\n' +
+                    '3️⃣ **Ajouter au panier** : Sélectionnez les produits et ajoutez-les à votre panier\n\n' +
+                    '4️⃣ **Commander** : ⚠️ Une commande ne peut contenir que des produits d\'UN SEUL vendeur\n\n' +
+                    '5️⃣ **Finaliser** : Remplissez vos informations, validez et discutez avec le vendeur\n\n' +
+                    '💬 Après la commande, vous serez redirigé vers la messagerie pour échanger avec le vendeur et le livreur.';
+          }
+          
+          // ===== CATÉGORIES DE PRODUITS =====
+          if (m.includes('catégorie') || m.includes('categorie') || m.includes('type de produit') || m.includes('produits disponibles')) {
+              return '📂 **Nos 11 catégories de produits :**\n\n' +
+                    '🌱 **Agriculture** : Manioc, maïs, mangues, haricots, bananes, amaranites\n' +
+                    '🐄 **Élevage** : Chèvres, poulets, œufs, viande\n' +
+                    '🐟 **Pêche** : Ndakala, Mukeke fumé, Sangala séché (du lac Tanganyika)\n' +
+                    '🥫 **Alimentaire** : Huile de palme, miel, farine de maïs\n' +
+                    '👗 **Mode** : Robes Wax, chemises, tenues enfant\n' +
+                    '👟 **Chaussures** : Sandales, baskets\n' +
+                    '💎 **Accessoires** : Sacs, montres, colliers\n' +
+                    '📱 **Électronique** : Téléphones, casques Bluetooth\n' +
+                    '🛋️ **Maison** : Chaises en bois, draps\n' +
+                    '🎨 **Artisanat** : Sculptures Makonde, paniers tressés\n' +
+                    '🔧 **Services** : Transport moto, réparation téléphone\n\n' +
+                    'Chaque produit affiche le vendeur, le prix, l\'unité et la disponibilité.';
+          }
+          
+          // ===== VENDEURS =====
+          if (m.includes('vendeur') || m.includes('boutique') || m.includes('magasin') || m.includes('commerçant') || m.includes('devenir vendeur')) {
+              return '🏪 **Informations sur les vendeurs :**\n\n' +
+                    '👤 **Qui sont-ils ?** Des commerçants locaux d\'Uvira et ses environs (agriculteurs, pêcheurs, artisans, etc.)\n\n' +
+                    '📋 **Infos affichées** : Photo, nom, boutique, note, nombre de ventes\n\n' +
+                    '🛍️ **Devenir vendeur** :\n' +
+                    '1. Créez un compte avec le rôle "Vendeur"\n' +
+                    '2. Complétez votre profil (boutique, quartier, avenue)\n' +
+                    '3. Publiez vos produits avec photos et prix\n' +
+                    '4. Gérez vos commandes via le Dashboard Vendeur\n\n' +
+                    '💬 **Communication** : Discutez avec les acheteurs via la messagerie après chaque commande.\n\n' +
+                    '⭐ Les vendeurs sont notés par les acheteurs pour garantir la qualité du service.';
+          }
+          
+          // ===== ACHETEURS =====
+          if (m.includes('acheteur') || m.includes('client') || m.includes('achat') || m.includes('acheter')) {
+              return '🛒 **Informations pour les acheteurs :**\n\n' +
+                    '✅ **Avantages** :\n' +
+                    '• Accès à des produits locaux de qualité\n' +
+                    '• Paiement sécurisé via Mobile Money\n' +
+                    '• Suivi en temps réel de vos commandes\n' +
+                    '• Messagerie directe avec vendeurs et livreurs\n' +
+                    '• Historique de vos commandes\n\n' +
+                    '📝 **Pour acheter :**\n' +
+                    '1. Créez un compte ou connectez-vous\n' +
+                    '2. Parcourez le catalogue et ajoutez au panier\n' +
+                    '3. Commandez et discutez avec le vendeur\n' +
+                    '4. Payez via Mobile Money (Airtel/Orange/M-Pesa)\n' +
+                    '5. Recevez votre produit par un livreur\n\n' +
+                    '💡 Conseil : Une commande ne peut contenir que des produits d\'un seul vendeur.';
+          }
+          
+          // ===== PANIER =====
+          if (m.includes('panier') || m.includes('cart') || m.includes('ajouter panier') || m.includes('voir panier')) {
+              return '🛍️ **Gestion du panier :**\n\n' +
+                    '📦 **Fonctionnalités :**\n' +
+                    '• Ajoutez des produits en un clic\n' +
+                    '• Modifiez les quantités (+ ou -)\n' +
+                    '• Supprimez des articles\n' +
+                    '• Affichage du total en FC et USD (selon devise)\n' +
+                    '• Vider le panier en un clic\n\n' +
+                    '⚠️ **Règle importante :**\n' +
+                    'Une commande ne peut contenir que des produits d\'un **SEUL vendeur**.\n' +
+                    'Si vous avez plusieurs vendeurs dans votre panier, un message vous invitera à choisir.\n\n' +
+                    '💡 Le panier est sauvegardé automatiquement dans votre navigateur.';
+          }
+          
+          // ===== COMMANDES =====
+          if (m.includes('commande') || m.includes('order') || m.includes('passer commande') || m.includes('historique commande')) {
+              return '📋 **Processus de commande :**\n\n' +
+                    '1️⃣ **Ajout au panier** : Sélectionnez vos produits\n' +
+                    '2️⃣ **Validation** : Remplissez nom, téléphone, quartier, avenue\n' +
+                    '3️⃣ **Confirmation** : Vérifiez les articles et le total\n' +
+                    '4️⃣ **Paiement** : Envoyez via Mobile Money (Airtel/Orange/M-Pesa)\n' +
+                    '5️⃣ **Messagerie** : Discutez avec le vendeur pour confirmer\n' +
+                    '6️⃣ **Livraison** : Un livreur vous est assigné\n' +
+                    '7️⃣ **Réception** : Confirmez la réception du produit\n\n' +
+                    '📱 **Suivi des commandes :**\n' +
+                    '• Accédez à "Mes commandes" dans le menu\n' +
+                    '• Consultez l\'historique complet\n' +
+                    '• Suivez le statut en temps réel\n\n' +
+                    '🏷️ **Statuts possibles :** En attente → Confirmée → En préparation → En livraison → Livrée';
+          }
+          
+          // ===== PAIEMENT =====
+          if (m.includes('paiement') || m.includes('payer') || m.includes('payement') || m.includes('mobile money') || 
+              m.includes('airtel') || m.includes('orange') || m.includes('m-pesa') || m.includes('mpesa')) {
+              return '💳 **Paiement sur UviraMarket :**\n\n' +
+                    '📱 **Moyens de paiement :**\n' +
+                    '• **Airtel Money** 💛\n' +
+                    '• **Orange Money** 🧡\n' +
+                    '• **M-Pesa** 💚\n\n' +
+                    '💰 **Devises acceptées :**\n' +
+                    '• Francs Congolais (FC)\n' +
+                    '• Dollars Américains (USD)\n\n' +
+                    '🔐 **Sécurité :**\n' +
+                    '• Les paiements sont sécurisés\n' +
+                    '• Le vendeur confirme la réception du paiement\n' +
+                    '• La commande n\'est préparée qu\'après confirmation\n\n' +
+                    '📝 **Processus :**\n' +
+                    '1. Passez la commande\n' +
+                    '2. Discutez avec le vendeur dans la messagerie\n' +
+                    '3. Envoyez le paiement via Mobile Money\n' +
+                    '4. Le vendeur confirme et prépare la commande\n' +
+                    '5. Un livreur est assigné pour la livraison';
+          }
+          
+          // ===== LIVRAISON =====
+          if (m.includes('livraison') || m.includes('livreur') || m.includes('delivery') || m.includes('transport') || m.includes('commande en cours')) {
+              return '🚚 **Informations sur la livraison :**\n\n' +
+                    '👤 **Livreurs partenaires :**\n' +
+                    '• David Lwanga\n' +
+                    '• Patrick Mupenda\n' +
+                    '• Et d\'autres partenaires locaux\n\n' +
+                    '📍 **Zones de livraison :**\n' +
+                    '• Uvira et ses environs\n' +
+                    '• Provinces : Sud-Kivu, Nord-Kivu, Kinshasa, etc.\n\n' +
+                    '📋 **Processus :**\n' +
+                    '1. Le vendeur assigne un livreur disponible\n' +
+                    '2. Le livreur est ajouté à la conversation\n' +
+                    '3. Suivez la livraison en temps réel\n' +
+                    '4. Recevez des notifications à chaque étape\n\n' +
+                    '⏱️ **Délai estimé :**\n' +
+                    '• Uvira intra-ville : 30 min - 2 heures\n' +
+                    '• Hors Uvira : selon distance\n\n' +
+                    '💬 Vous pouvez discuter directement avec le livreur dans la messagerie.';
+          }
+          
+          // ===== INSCRIPTION / COMPTE =====
+          if (m.includes('inscription') || m.includes('compte') || m.includes('créer') || m.includes('register') || m.includes('s\'inscrire')) {
+              return '📝 **Création de compte :**\n\n' +
+                    '👤 **Informations requises :**\n' +
+                    '• Nom complet *\n' +
+                    '• Email *\n' +
+                    '• Téléphone\n' +
+                    '• Rôle (Acheteur ou Vendeur) *\n' +
+                    '• Mot de passe (min. 6 caractères) *\n' +
+                    '• Confirmation du mot de passe *\n\n' +
+                    '📋 **Pour les vendeurs (après inscription) :**\n' +
+                    '• Province, territoire, quartier, avenue\n' +
+                    '• Photo de profil\n' +
+                    '• Nom de la boutique\n' +
+                    '• Informations supplémentaires sur l\'activité\n\n' +
+                    '🔐 **Sécurité :**\n' +
+                    '• Mot de passe haché\n' +
+                    '• Session sécurisée (24h)\n' +
+                    '• Vos données sont protégées\n\n' +
+                    '✅ **Compte démo admin :**\n' +
+                    'Email : admin@uviramarket.com\n' +
+                    'Mot de passe : Admin@2026';
+          }
+          
+          // ===== PROFIL UTILISATEUR =====
+          if (m.includes('profil') || m.includes('profile') || m.includes('mon compte') || m.includes('modifier profil')) {
+              return '👤 **Gestion du profil :**\n\n' +
+                    '✏️ **Informations modifiables :**\n' +
+                    '• Nom complet\n' +
+                    '• Téléphone\n' +
+                    '• Email\n' +
+                    '• Sexe\n' +
+                    '• Province\n' +
+                    '• Territoire/Ville\n' +
+                    '• Quartier\n' +
+                    '• Avenue\n' +
+                    '• Adresse complète\n' +
+                    '• Photo de profil\n\n' +
+                    '🔑 **Sécurité :**\n' +
+                    '• Changement de mot de passe\n' +
+                    '• Zone dangereuse : effacer mes données / supprimer mon compte\n\n' +
+                    '📱 **Accès :**\n' +
+                    'Cliquez sur votre avatar en haut à droite et sélectionnez "Mon profil".';
+          }
+          
+          // ===== MESSAGERIE =====
+          if (m.includes('message') || m.includes('messagerie') || m.includes('discussion') || m.includes('chat') || m.includes('conversation')) {
+              return '💬 **Messagerie UviraMarket :**\n\n' +
+                    '📱 **Fonctionnalités :**\n' +
+                    '• Discussions en temps réel\n' +
+                    '• Groupes de commande (acheteur + vendeur + livreur)\n' +
+                    '• Envoi d\'images, vidéos et audios\n' +
+                    '• Indicateurs de lecture (✓ / ✓✓)\n' +
+                    '• Suivi des commandes en direct\n\n' +
+                    '👥 **Participants possibles :**\n' +
+                    '• Acheteur\n' +
+                    '• Vendeur\n' +
+                    '• Livreur (pour les commandes)\n\n' +
+                    '📎 **Fichiers acceptés :**\n' +
+                    '• Images : JPG, PNG (max 1MB)\n' +
+                    '• Vidéos : MP4 (max 1MB)\n' +
+                    '• Audios : MP3, AAC (max 1MB)\n\n' +
+                    '💡 Les conversations sont sauvegardées et accessibles depuis "Messages".';
+          }
+          
+          // ===== DASHBOARD VENDEUR =====
+          if (m.includes('dashboard') || m.includes('tableau de bord') || m.includes('statistique') || m.includes('stat') || m.includes('vendeur dash')) {
+              return '📊 **Dashboard Vendeur :**\n\n' +
+                    '📋 **Commandes reçues :**\n' +
+                    '• En attente → Confirmez les paiements\n' +
+                    '• Confirmée → Préparez la commande\n' +
+                    '• En préparation → Assignez un livreur\n' +
+                    '• En livraison → Suivez le parcours\n' +
+                    '• Livrée → Confirmez la finalisation\n\n' +
+                    '📈 **Statistiques :**\n' +
+                    '• Graphique des commandes par statut\n' +
+                    '• Revenus générés (FC et USD)\n\n' +
+                    '📦 **Gestion des produits :**\n' +
+                    '• Ajouter / modifier / supprimer des produits\n' +
+                    '• Voir les stocks et les ventes\n' +
+                    '• Activer / désactiver des produits\n\n' +
+                    '💬 Accédez directement à la messagerie pour communiquer avec les acheteurs.';
+          }
+          
+          // ===== ADMINISTRATION =====
+          if (m.includes('admin') || m.includes('administrateur') || m.includes('gestion') || m.includes('administration')) {
+              return '🔐 **Administration UviraMarket :**\n\n' +
+                    '👑 **Rôle de l\'admin :**\n' +
+                    '• Gérer les utilisateurs (vendeurs, livreurs)\n' +
+                    '• Contrôler les produits et commandes\n' +
+                    '• Publier des publicités\n' +
+                    '• Paramétrer le système\n\n' +
+                    '📊 **Tableau de bord admin :**\n' +
+                    '• Vue d\'ensemble des données\n' +
+                    '• Graphiques de ventes et d\'utilisateurs\n' +
+                    '• Liste des inscrits avec actions CRUD\n' +
+                    '• Gestion des produits (tous)\n' +
+                    '• Gestion des commandes (toutes)\n' +
+                    '• Gestion des publicités\n' +
+                    '• Paramètres système (catégories, livreurs)\n\n' +
+                    '🔒 **Accès :** Uniquement avec le compte admin.\n' +
+                    '🚫 Les données admin ne sont pas accessibles via l\'assistant.';
+          }
+          
+          // ===== SÉCURITÉ =====
+          if (m.includes('sécurité') || m.includes('secure') || m.includes('protection') || m.includes('confidentiel')) {
+              return '🔒 **Sécurité et confidentialité :**\n\n' +
+                    '🛡️ **Protection des données :**\n' +
+                    '• Mots de passe hachés (SHA-256)\n' +
+                    '• Sessions sécurisées avec expiration (24h)\n' +
+                    '• Données personnelles protégées\n' +
+                    '• Seul le propriétaire et l\'admin y ont accès\n\n' +
+                    '🔐 **Vos informations :**\n' +
+                    '• Nom, email, téléphone\n' +
+                    '• Province, territoire, quartier, avenue\n' +
+                    '• Photo de profil (optionnelle)\n\n' +
+                    '👀 **Visibilité :**\n' +
+                    '• Les vendeurs voient vos infos pour la livraison\n' +
+                    '• Les livreurs voient votre adresse pour la livraison\n' +
+                    '• L\'admin a accès à toutes les données pour modération\n\n' +
+                    '📋 **Recommandations :**\n' +
+                    '• Utilisez un mot de passe fort\n' +
+                    '• Ne partagez pas vos identifiants\n' +
+                    '• Vérifiez toujours les URLs officielles';
+          }
+          
+          // ===== PUBLICITÉ =====
+          if (m.includes('publicité') || m.includes('promotion') || m.includes('offre') || m.includes('annonce') || m.includes('pub')) {
+              const ads = S.ads.filter(a => a.active);
+              if (ads.length) {
+                  let reply = '📢 **Publicités et promotions en cours :**\n\n';
+                  ads.forEach(a => {
+                      reply += `📌 **${a.titre}**\n`;
+                      reply += `   ${a.texte}\n\n`;
+                  });
+                  reply += '💡 Restez à l\'affût des nouvelles offres sur la page d\'accueil !';
+                  return reply;
+              }
+              return '📢 Aucune publicité ou promotion active pour le moment. Revenez bientôt !';
+          }
+          
+          // ===== PRODUITS SPÉCIFIQUES =====
+          if (m.includes('manioc') || m.includes('maïs') || m.includes('mangue') || m.includes('haricot') || m.includes('banane')) {
+              return '🌱 **Produits agricoles disponibles :**\n\n' +
+                    '• **Manioc frais** : 500 FC/tas\n' +
+                    '• **Maïs blanc** : 1 200 FC/kg\n' +
+                    '• **Mangues mûres** : 800 FC/douzaine (promo : 600 FC)\n' +
+                    '• **Amarantes fraîches** : 300 FC/botte\n' +
+                    '• **Haricots blancs** : 2 500 FC/kg\n' +
+                    '• **Bananes plantains** : 1 500 FC/régime\n\n' +
+                    '💡 Tous ces produits viennent des champs d\'Uvira et sont vendus par des agriculteurs locaux.';
+          }
+          
+          if (m.includes('chèvre') || m.includes('poulet') || m.includes('élevage')) {
+              return '🐄 **Produits d\'élevage :**\n\n' +
+                    '• **Chèvre de boucherie** : 85 000 FC/pièce (~25kg)\n' +
+                    '• **Poulets de chair** : 12 000 FC/pièce\n\n' +
+                    '🐓 Ces animaux sont élevés en plein air, nourris au maïs et aux herbes.\n' +
+                    '💡 Pour les poulets, prix au pièce, selon le poids.';
+          }
+          
+          if (m.includes('poisson') || m.includes('pêche') || m.includes('ndakala') || m.includes('mukeke') || m.includes('sangala') || m.includes('lac tanganyika')) {
+              return '🐟 **Produits de la pêche (lac Tanganyika) :**\n\n' +
+                    '• **Ndakala frais** : 3 500 FC/kg\n' +
+                    '• **Mukeke fumé** : 6 000 FC/pièce (promo : 4 800 FC)\n' +
+                    '• **Sangala séché** : 4 500 FC/kg\n\n' +
+                    '🎣 Pêchés localement, fumés au bois de manguier pour une saveur authentique.';
+          }
+          
+          if (m.includes('wax') || m.includes('robe') || m.includes('chemise') || m.includes('tenue') || m.includes('mode')) {
+              return '👗 **Mode et vêtements :**\n\n' +
+                    '• **Robe Wax femme** : 25 USD/pièce (promo : 20 USD)\n' +
+                    '• **Chemise homme** : 15 USD/pièce\n' +
+                    '• **Tenue enfant** : 12 000 FC/pièce (2-10 ans)\n\n' +
+                    '🧵 Tissus de qualité, coupes modernes et confortables.';
+          }
+          
+          if (m.includes('chaussure') || m.includes('sandale') || m.includes('basket')) {
+              return '👟 **Chaussures :**\n\n' +
+                    '• **Sandales homme** : 18 USD/paire (cuir véritable)\n' +
+                    '• **Baskets femme** : 22 USD/paire\n\n' +
+                    '💡 Fabriquées par des artisans locaux d\'Uvira.';
+          }
+          
+          if (m.includes('sac') || m.includes('montre') || m.includes('collier') || m.includes('accessoire')) {
+              return '💎 **Accessoires :**\n\n' +
+                    '• **Sac à main** : 15 000 FC/pièce\n' +
+                    '• **Montre classique** : 35 USD/pièce (promo : 28 USD)\n' +
+                    '• **Collier de perles** : 8 000 FC/pièce (fait main)\n\n' +
+                    '🎨 Des accessoires artisanaux et modernes pour compléter votre style.';
+          }
+          
+          if (m.includes('téléphone') || m.includes('samsung') || m.includes('tecno') || m.includes('casque') || m.includes('électronique')) {
+              return '📱 **Électronique :**\n\n' +
+                    '• **Samsung Galaxy A14** : 85 USD/pièce (occasion)\n' +
+                    '• **Tecno Spark 20** : 65 USD/pièce (neuf, garantie)\n' +
+                    '• **Casque Bluetooth** : 6 USD/pièce\n\n' +
+                    '🔋 Articles vérifiés, avec garantie pour les produits neufs.';
+          }
+          
+          // ===== CONTACT / SUPPORT =====
+          if (m.includes('contact') || m.includes('support') || m.includes('aide') || m.includes('assistance')) {
+              return '📞 **Contact et support :**\n\n' +
+                    '📧 **Email** : hubtechdrc@gmail.com\n' +
+                    '📱 **Téléphone** : +243 837 373 464\n' +
+                    '🕐 **Disponibilité** : 24h/24 — 7j/7\n\n' +
+                    '📍 **Adresse** : Uvira Centre, Sud-Kivu, RDC\n\n' +
+                    '💬 **Via la plateforme** :\n' +
+                    '• Messagerie intégrée pour les commandes\n' +
+                    '• Assistant IA disponible 24h/24\n' +
+                    '• Notifications pour les mises à jour\n\n' +
+                    '🤝 Une équipe dédiée est à votre écoute pour toute question ou problème.';
+          }
+          
+          // ===== HORAIRES =====
+          if (m.includes('horaire') || m.includes('heure') || m.includes('ouverture') || m.includes('disponibilité')) {
+              return '🕐 **Horaires et disponibilité :**\n\n' +
+                    '🏪 **Plateforme** : 24h/24 — 7j/7\n' +
+                    '📞 **Support** : 24h/24 — 7j/7\n' +
+                    '🚚 **Livraison** : Du lundi au dimanche\n' +
+                    '   • Uvira intra-ville : de 6h à 21h\n' +
+                    '   • Hors Uvira : selon entente\n\n' +
+                    '💡 Les vendeurs ont leurs propres horaires, contactez-les via la messagerie pour plus d\'informations.';
+          }
+          
+          // ===== RACCOURCI / NAVIGATION =====
+          if (m.includes('menu') || m.includes('navigation') || m.includes('accès') || m.includes('comment accéder')) {
+              return '🧭 **Navigation sur UviraMarket :**\n\n' +
+                    '🏠 **Accueil** : Page principale avec héros, catégories, promos et produits populaires\n' +
+                    '📋 **Catalogue** : Tous les produits avec filtres (catégorie, tri)\n' +
+                    '🛍️ **Panier** : Latéral sur desktop, en bas sur mobile\n' +
+                    '💬 **Messages** : Toutes vos conversations avec vendeurs et livreurs\n' +
+                    '📦 **Commandes** : Historique et suivi de vos commandes\n' +
+                    '❤️ **Favoris** : Vos produits likés\n' +
+                    '👤 **Profil** : Vos informations personnelles\n' +
+                    '⚙️ **Paramètres** : Configuration de la plateforme\n' +
+                    '📊 **Dashboard** : (Vendeur) Gestion des commandes et produits\n' +
+                    '🔐 **Admin** : (Admin) Gestion complète du système\n\n' +
+                    '📱 **Sur mobile** : Menu hamburger pour accéder à toutes les sections.';
+          }
+          
+          // ===== ERREURS / PROBLÈMES =====
+          if (m.includes('erreur') || m.includes('problème') || m.includes('bug') || m.includes('fonctionne pas') || m.includes('bloqué')) {
+              return '🔧 **Résolution de problèmes :**\n\n' +
+                    '⚠️ **Problèmes courants :**\n' +
+                    '• **Connexion impossible** : Vérifiez vos identifiants, réinitialisez votre mot de passe\n' +
+                    '• **Panier vide** : Les produits doivent être du même vendeur\n' +
+                    '• **Image non envoyée** : Taille max 1MB, formats JPG/PNG/MP4\n' +
+                    '• **Commande bloquée** : Contactez le vendeur via la messagerie\n\n' +
+                    '💡 **Solutions :**\n' +
+                    '1. Rafraîchissez la page (F5)\n' +
+                    '2. Vérifiez votre connexion internet\n' +
+                    '3. Effacez le cache du navigateur\n' +
+                    '4. Contactez le support si le problème persiste\n\n' +
+                    '📞 **Support** : +243 837 373 464 / hubtechdrc@gmail.com';
+          }
+          
+          // ===== INFORMATIONS GÉNÉRALES =====
+          if (m.includes('année') || m.includes('2026') || m.includes('date') || m.includes('version')) {
+              return '📅 **UviraMarket — Version 2026**\n\n' +
+                    '• Année de lancement : 2026\n' +
+                    '• Plateforme : Web (responsive)\n' +
+                    '• Technologies : HTML5, CSS3, JavaScript, Bootstrap 5\n' +
+                    '• Base de données : localStorage (persistante)\n' +
+                    '• Sécurité : SHA-256, sessions JWT-like\n\n' +
+                    '🚀 Projet développé pour la communauté d\'Uvira, Sud-Kivu, RDC.';
+          }
+          
+          // ===== REMERCIEMENTS =====
+          if (m.includes('merci') || m.includes('thanks') || m.includes('cool') || m.includes('super')) {
+              return '🙏 **Je vous remercie !**\n\n' +
+                    'C\'est un plaisir de vous assister sur UviraMarket.\n\n' +
+                    '💡 **Astuces :**\n' +
+                    '• Vous pouvez poser des questions sur les produits spécifiques\n' +
+                    '• Je peux vous aider à naviguer sur la plateforme\n' +
+                    '• N\'hésitez pas à me demander des clarifications\n\n' +
+                    '🎯 **Je suis là pour :**\n' +
+                    '• Vous guider dans vos achats\n' +
+                    '• Vous informer sur le fonctionnement\n' +
+                    '• Résoudre vos problèmes\n\n' +
+                    'Bonne journée sur UviraMarket ! 🌟';
+          }
+          
+          // ===== RÉPONSE PAR DÉFAUT =====
+          return '🤔 Je ne suis pas sûr de comprendre votre question. Voici ce que je peux faire :\n\n' +
+                '✅ **Domaines d\'expertise :**\n' +
+                '• 🛍️ Trouver des produits et le catalogue\n' +
+                '• 📦 Commander et gérer le panier\n' +
+                '• 💳 Paiements Mobile Money (Airtel/Orange/M-Pesa)\n' +
+                '• 🚚 Livraison et suivi des livreurs\n' +
+                '• 📝 Inscription et gestion de compte\n' +
+                '• 💬 Messagerie avec vendeurs et livreurs\n' +
+                '• 📊 Dashboard vendeur\n' +
+                '• 📱 Navigation sur la plateforme\n\n' +
+                '❓ **Posez votre question plus clairement**, ou contactez notre support :\n' +
+                '📧 hubtechdrc@gmail.com | 📞 +243 837 373 464\n\n' +
+                '💡 Essayez de reformuler avec des mots-clés comme "produit", "commande", "paiement", "inscription", "livraison".';
+      }
         /* ===== HEADER ===== */
 
         function renderHeader() {
@@ -2101,172 +2643,298 @@
         /* ===== PAGE ACCUEIL ===== */
 
         function pgHome() {
-            const pop = [...S.products].filter(p => p.actif !== false).sort((a, b) => b.ventes - a.ventes).slice(0, 8);
-            const promos = S.products.filter(p => p.enPromotion && p.actif !== false).slice(0, 4);
-            const ad = S.ads.filter(a => a.active)[0];
+    const pop = [...S.products].filter(p => p.actif !== false).sort((a, b) => b.ventes - a.ventes).slice(0, 8);
+    const promos = S.products.filter(p => p.enPromotion && p.actif !== false).slice(0, 4);
+    const ad = S.ads.filter(a => a.active)[0];
+    
+    // ===== STATISTIQUES DYNAMIQUES =====
+    const totalVendeurs = VEND.filter(v => v.actif !== false).length;
+    const totalProduits = S.products.filter(p => p.actif !== false).length;
+    const totalCommandes = S.orders.length;
+    const totalLivrees = S.orders.filter(o => o.statut === 'livree').length;
+    const tauxSatisfaction = totalCommandes > 0 ? Math.round((totalLivrees / totalCommandes) * 100) : 98;
 
-            return `
-            <!-- HERO -->
-            <section class="hero-gradient py-5" style="min-height:320px;">
-              <div class="container py-3">
-                <div class="row align-items-center">
-                  <div class="col-lg-6 text-white">
-                    <div class="d-inline-flex align-items-center gap-2 bg-white bg-opacity-10 rounded-pill px-3 py-1 mb-3">
-                      <span class="badge bg-accent rounded-pill" style="width:8px;height:8px;padding:0;"></span>
-                      <span style="font-size:0.7rem;opacity:0.7;">Marché numérique d'Uvira — 2026</span>
-                    </div>
-                    <h1 class="display-5 fw-800" style="line-height:1.1;">Achetez local,<br><span class="text-accent">simplement et vite</span></h1>
-                    <p class="opacity-75 mt-3" style="font-size:0.9rem;max-width:400px;">Agriculteurs, pêcheurs, artisans. Ajoutez au panier, payez, suivez par message avec le vendeur et le livreur.</p>
-                    <div class="d-flex flex-wrap gap-2 mt-3">
-                      <button class="btn btn-primary-custom" onclick="document.getElementById('prod-zone')?.scrollIntoView({behavior:'smooth'})">
-                        <i class="fas fa-search me-1"></i> Voir les produits
-                      </button>
-                      <button class="btn btn-outline-light" onclick="go('register')" style="border-color:rgba(255,255,255,0.3);">
-                        <i class="fas fa-store me-1"></i> Devenir vendeur
-                      </button>
-                    </div>
-                    <div class="d-flex gap-4 mt-4">
-                      <div><span class="fw-800 fs-4">${S.products.filter(p=>p.actif!==false).length}+</span><br><span class="opacity-50" style="font-size:0.7rem;">Produits</span></div>
-                      <div class="vr opacity-25"></div>
-                      <div><span class="fw-800 fs-4">${VEND.filter(v=>v.actif).length}</span><br><span class="opacity-50" style="font-size:0.7rem;">Vendeurs</span></div>
-                      <div class="vr opacity-25"></div>
-                      <div><span class="fw-800 fs-4">2026</span><br><span class="opacity-50" style="font-size:0.7rem;">Année</span></div>
-                    </div>
-                  </div>
-                  <div class="col-lg-6 d-none d-lg-block">
-                    <div class="row g-2">
-                      ${pop.slice(0,4).map((p,i) => `
-                        <div class="col-6 ${i%2?'mt-4':''}" onclick="go('product',${p.id})" style="cursor:pointer;">
-                          <div class="bg-white bg-opacity-10 rounded-3 p-2 h-100 hover-bg-white hover-bg-opacity-15 transition">
-                            <img src="${p.images[0]}" class="w-100 rounded-2" style="height:80px;object-fit:cover;">
-                            <div class="text-white fw-600" style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.nom}</div>
-                            <div class="text-accent fw-700" style="font-size:0.8rem;">${fmt(p.prixPromo||p.prix,p.devise)}</div>
-                          </div>
-                        </div>
-                      `).join('')}
-                    </div>
-                  </div>
-                </div>
+    return `
+    <!-- ===== HERO SECTION ===== -->
+    <section style="background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 30%, #2D1810 70%, #1a1a2e 100%); padding: 4rem 0; position: relative; overflow: hidden; min-height: 450px;">
+      <!-- Effet de fond animé -->
+      <div style="position: absolute; top: -50%; right: -20%; width: 600px; height: 600px; background: radial-gradient(circle, rgba(196,93,44,0.08) 0%, transparent 70%); border-radius: 50%; pointer-events: none;"></div>
+      <div style="position: absolute; bottom: -30%; left: -10%; width: 400px; height: 400px; background: radial-gradient(circle, rgba(45,106,79,0.06) 0%, transparent 70%); border-radius: 50%; pointer-events: none;"></div>
+      
+      <div class="container position-relative" style="z-index: 2;">
+        <div class="row align-items-center">
+          <div class="col-lg-6 text-white" style="padding-right: 3rem;">
+            <div style="display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.06); backdrop-filter: blur(10px); padding: 6px 18px 6px 10px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 1.5rem;">
+              <span style="display: inline-block; width: 8px; height: 8px; background: #D4A017; border-radius: 50%; animation: pulse 2s infinite;"></span>
+              <span style="font-size:0.7rem; letter-spacing: 1px; opacity: 0.7; text-transform: uppercase; font-weight: 500;">Marché numérique d'Uvira — 2026</span>
+            </div>
+            <h1 style="font-size: 3rem; font-weight: 800; line-height: 1.1; margin-bottom: 1rem; background: linear-gradient(135deg, #ffffff 0%, #D4A017 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+              Achetez local,<br>simplement et vite
+            </h1>
+            <p style="font-size: 1.05rem; opacity: 0.7; max-width: 420px; line-height: 1.7; margin-bottom: 1.5rem; -webkit-text-fill-color: #fff;">
+              Agriculteurs, pêcheurs, artisans. Ajoutez au panier, payez, suivez par message avec le vendeur et le livreur.
+            </p>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 2rem;">
+              <button onclick="document.getElementById('prod-zone')?.scrollIntoView({behavior:'smooth'})" 
+                      style="background: linear-gradient(135deg, #C45D2C, #A84D22); color: #fff; border: none; padding: 12px 32px; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(196,93,44,0.3);"
+                      onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 32px rgba(196,93,44,0.45)';"
+                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 20px rgba(196,93,44,0.3)';">
+                <i class="fas fa-search me-2"></i> Voir les produits
+              </button>
+              <button onclick="go('register')" 
+                      style="background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); color: #fff; border: 1px solid rgba(255,255,255,0.15); padding: 12px 32px; border-radius: 50px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease;"
+                      onmouseover="this.style.background='rgba(255,255,255,0.15)'; this.style.transform='translateY(-3px)';"
+                      onmouseout="this.style.background='rgba(255,255,255,0.08)'; this.style.transform='translateY(0)';">
+                <i class="fas fa-store me-2"></i> Devenir vendeur
+              </button>
+            </div>
+            <div style="display: flex; gap: 2.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.06);">
+              <div>
+                <span style="font-size: 1.8rem; font-weight: 800; color: #D4A017;">${totalProduits}</span>
+                <br><span style="font-size:0.75rem; opacity:0.5; letter-spacing: 0.5px;">Produits</span>
               </div>
-            </section>
-
-            <!-- Publicité -->
-            ${ad ? `
-              <div class="container mt-n3 mb-4">
-                <div class="ad-banner bg-white p-3">
-                  <div class="d-flex flex-column flex-sm-row align-items-center gap-3">
-                    <img src="${ad.image}" class="rounded-3" style="width:100%;max-width:200px;height:100px;object-fit:cover;">
-                    <div class="flex-grow-1">
-                      <div class="ad-tag"><i class="fas fa-bullhorn me-1"></i>Publicité</div>
-                      <h5 class="fw-700 text-brown mt-1">${ad.titre}</h5>
-                      <p class="text-brown-muted" style="font-size:0.8rem;">${ad.texte}</p>
-                    </div>
-                  </div>
-                </div>
+              <div style="width: 1px; background: rgba(255,255,255,0.08);"></div>
+              <div>
+                <span style="font-size: 1.8rem; font-weight: 800; color: #D4A017;">${totalVendeurs}</span>
+                <br><span style="font-size:0.75rem; opacity:0.5; letter-spacing: 0.5px;">Vendeurs</span>
               </div>
-            ` : ''}
-
-            <!-- Catégories -->
-            <div class="container py-3">
-              <div class="row g-2">
-                ${CATS.map(c => `
-                  <div class="col-3 col-sm-2 col-md-1" onclick="S.filters.catId=${c.id};go('catalog')" style="cursor:pointer;">
-                    <div class="cat-card text-center">
-                      <div class="cat-icon mx-auto" style="background:${c.color}10;">
-                        <i class="fas ${c.icon}" style="color:${c.color};"></i>
-                      </div>
-                      <div class="fw-600" style="font-size:0.6rem;">${c.nom}</div>
-                    </div>
-                  </div>
-                `).join('')}
+              <div style="width: 1px; background: rgba(255,255,255,0.08);"></div>
+              <div>
+                <span style="font-size: 1.8rem; font-weight: 800; color: #D4A017;">2026</span>
+                <br><span style="font-size:0.75rem; opacity:0.5; letter-spacing: 0.5px;">Année</span>
               </div>
             </div>
-
-            <!-- Promos -->
-            ${promos.length ? `
-              <section class="py-4" style="background:linear-gradient(90deg,rgba(196,93,44,0.04),rgba(212,160,23,0.04));">
-                <div class="container">
-                  <h5 class="fw-800 text-brown mb-3"><span class="sec-bar"></span>Promotions</h5>
-                  <div class="row g-3">
-                    ${promos.map(p => `
-                      <div class="col-12 col-sm-6 col-xl-3">
-                        ${pCard(p)}
-                      </div>
-                    `).join('')}
+          </div>
+          <div class="col-lg-6 d-none d-lg-block">
+            <div class="row g-3">
+              ${pop.slice(0,4).map((p,i) => `
+                <div class="col-6 ${i%2?'mt-5':''}" onclick="go('product',${p.id})" style="cursor:pointer;">
+                  <div style="background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border-radius: 16px; padding: 1rem; border: 1px solid rgba(255,255,255,0.06); transition: all 0.4s ease; height: 100%;"
+                       onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.transform='translateY(-6px)'; this.style.boxShadow='0 12px 40px rgba(0,0,0,0.3)';"
+                       onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                    <img src="${p.images[0]}" style="width:100%; height:90px; object-fit:cover; border-radius:10px;">
+                    <div style="color:#fff; font-weight:600; font-size:0.8rem; margin-top:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p.nom}</div>
+                    <div style="color:#D4A017; font-weight:700; font-size:0.85rem;">${fmt(p.prixPromo||p.prix,p.devise)}</div>
                   </div>
                 </div>
-              </section>
-            ` : ''}
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-            <!-- Produits populaires + Panier -->
-            <div class="container py-4">
-              <div class="row">
-                <div class="col-lg-9">
-                  <h5 class="fw-800 text-brown mb-3"><span class="sec-bar"></span>Populaires</h5>
-                  <div class="row g-3" id="prod-zone">
-                    ${pop.map(p => `
-                      <div class="col-12 col-sm-6 col-xl-4">
-                        ${pCard(p)}
-                      </div>
-                    `).join('')}
-                  </div>
-                </div>
-                <div class="col-lg-3 d-none d-lg-block">
-                  ${cartSB()}
-                </div>
+    <!-- ===== PUBLICITÉ ===== -->
+    ${ad ? `
+      <div class="container" style="margin-top: -1.5rem; margin-bottom: 2rem; position: relative; z-index: 3;">
+        <div style="background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); border-radius: 16px; padding: 1.5rem; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 8px 40px rgba(0,0,0,0.08);">
+          <div style="display: flex; flex-direction: column; flex-direction: row; align-items: center; gap: 1.5rem;">
+            <img src="${ad.image}" style="width:100%; max-width:200px; height:100px; object-fit:cover; border-radius:12px;">
+            <div style="flex:1;">
+              <div style="background: linear-gradient(135deg, #D4A017, #C45D2C); color:#fff; font-size:0.6rem; font-weight:700; padding:2px 14px; display:inline-block; border-radius:0 0 10px 0; letter-spacing:0.5px; text-transform:uppercase;">
+                <i class="fas fa-bullhorn me-1"></i>Publicité
+              </div>
+              <h5 style="font-weight:700; color:#2D1810; margin-top:6px;">${ad.titre}</h5>
+              <p style="font-size:0.85rem; color:#8A7A6A; margin:0;">${ad.texte}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- ===== CATÉGORIES ===== -->
+    <div class="container" style="padding: 2rem 0;">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem;">
+        <span style="display: inline-block; width: 4px; height: 28px; background: linear-gradient(180deg, #C45D2C, #D4A017); border-radius: 4px;"></span>
+        <h5 style="font-weight: 800; color: #2D1810; margin: 0; font-size: 1.1rem;">Catégories</h5>
+        <span style="flex: 1; height: 1px; background: linear-gradient(90deg, rgba(232,221,214,0.5), transparent);"></span>
+      </div>
+      <div class="row g-2">
+        ${CATS.map(c => `
+          <div class="col-3 col-sm-2 col-md-1" onclick="S.filters.catId=${c.id};go('catalog')" style="cursor:pointer;">
+            <div style="background:#fff; border-radius:12px; padding:14px 8px; text-align:center; border:1px solid #E8DDD6; transition:all 0.3s ease; height:100%;"
+                 onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 24px rgba(0,0,0,0.08)'; this.style.borderColor='#C45D2C';"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'; this.style.borderColor='#E8DDD6';">
+              <div style="width:40px; height:40px; border-radius:10px; margin:0 auto 6px; display:flex; align-items:center; justify-content:center; background:${c.color}15;">
+                <i class="fas ${c.icon}" style="color:${c.color}; font-size:1rem;"></i>
+              </div>
+              <div style="font-weight:600; font-size:0.6rem; color:#2D1810;">${c.nom}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    <!-- ===== PROMOTIONS ===== -->
+    ${promos.length ? `
+      <section style="background: linear-gradient(90deg, rgba(196,93,44,0.04), rgba(212,160,23,0.04)); padding: 2rem 0;">
+        <div class="container">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem;">
+            <span style="display: inline-block; width: 4px; height: 28px; background: linear-gradient(180deg, #DC3545, #D4A017); border-radius: 4px;"></span>
+            <h5 style="font-weight: 800; color: #2D1810; margin: 0; font-size: 1.1rem;">
+              <i class="fas fa-fire" style="color: #DC3545; margin-right: 8px;"></i>Promotions
+            </h5>
+            <span style="flex: 1; height: 1px; background: linear-gradient(90deg, rgba(232,221,214,0.5), transparent);"></span>
+          </div>
+          <div class="row g-3">
+            ${promos.map(p => `
+              <div class="col-12 col-sm-6 col-xl-3">
+                ${pCard(p)}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </section>
+    ` : ''}
+
+    <!-- ===== PRODUITS POPULAIRES ===== -->
+    <div class="container" style="padding: 2rem 0 3rem 0;">
+      <div class="row">
+        <div class="col-lg-9">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem;">
+            <span style="display: inline-block; width: 4px; height: 28px; background: linear-gradient(180deg, #C45D2C, #D4A017); border-radius: 4px;"></span>
+            <h5 style="font-weight: 800; color: #2D1810; margin: 0; font-size: 1.1rem;">
+              <i class="fas fa-star" style="color: #D4A017; margin-right: 8px;"></i>Populaires
+            </h5>
+            <span style="flex: 1; height: 1px; background: linear-gradient(90deg, rgba(232,221,214,0.5), transparent);"></span>
+            <a onclick="go('catalog')" style="font-size:0.8rem; color:#C45D2C; font-weight:600; cursor:pointer; transition:all 0.2s; text-decoration:none;"
+               onmouseover="this.style.color='#A84D22';"
+               onmouseout="this.style.color='#C45D2C';">
+              Voir tout <i class="fas fa-arrow-right ms-1" style="font-size:0.6rem;"></i>
+            </a>
+          </div>
+          <div class="row g-3" id="prod-zone">
+            ${pop.map(p => `
+              <div class="col-12 col-sm-6 col-xl-4">
+                ${pCard(p)}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="col-lg-3 d-none d-lg-block">
+          ${cartSB()}
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PANIER MOBILE ===== -->
+    <div id="cart-zone-mobile" class="d-lg-none container" style="padding-bottom: 2rem;">
+      ${cartSB()}
+    </div>
+
+    <!-- ===== STATISTIQUES PROFESSIONNELLES ===== -->
+    <section style="background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%); padding: 3.5rem 0; border-top: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);">
+      <div class="container">
+        <div style="text-align: center; margin-bottom: 2.5rem;">
+          <span style="display: inline-block; width: 40px; height: 3px; background: linear-gradient(90deg, #C45D2C, #D4A017); border-radius: 4px; margin-bottom: 8px;"></span>
+          <h5 style="font-weight: 800; color: #fff; font-size: 1.1rem; letter-spacing: 0.5px;">
+            <span style="color: #D4A017;">Chiffres</span> clés
+          </h5>
+          <p style="font-size: 0.85rem; color: rgba(255,255,255,0.3); margin: 0;">UviraMarket en quelques chiffres</p>
+        </div>
+        <div class="row g-4 text-center">
+          
+          <div class="col-6 col-md-3">
+            <div style="background: rgba(45, 106, 79, 0.12); border: 1px solid rgba(45, 106, 79, 0.2); border-radius: 16px; padding: 1.5rem 1rem; transition: all 0.4s ease;"
+                 onmouseover="this.style.background='rgba(45,106,79,0.2)'; this.style.transform='translateY(-6px)'; this.style.boxShadow='0 12px 40px rgba(45,106,79,0.15)';"
+                 onmouseout="this.style.background='rgba(45,106,79,0.12)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 0.5rem;">
+                <i class="fas fa-store" style="color: #A7F3D0; font-size: 1.6rem; opacity:0.9;"></i>
+              </div>
+              <div style="font-size: 2.5rem; font-weight: 800; color: #A7F3D0; line-height: 1.2; text-shadow: 0 0 40px rgba(167, 243, 208, 0.1);">
+                ${totalVendeurs}
+              </div>
+              <div style="font-size:0.75rem; color: rgba(167, 243, 208, 0.5); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-top: 2px;">
+                Vendeurs
               </div>
             </div>
-
-            <!-- Panier mobile -->
-            <div id="cart-zone-mobile" class="d-lg-none container pb-3">
-              ${cartSB()}
-            </div>
-
-            <!-- Statistiques -->
-            <section class="bg-brown text-white py-5 mt-4">
-              <div class="container">
-                <div class="row g-3 text-center">
-                  <div class="col-3">
-                    <div class="p-3 rounded-3 bg-white bg-opacity-10">
-                      <i class="fas fa-store fs-2 text-accent"></i>
-                      <div class="fw-800 fs-3">500+</div>
-                      <div style="font-size:0.75rem;opacity:0.5;">Vendeurs</div>
-                    </div>
-                  </div>
-                  <div class="col-3">
-                    <div class="p-3 rounded-3 bg-white bg-opacity-10">
-                      <i class="fas fa-box fs-2 text-accent"></i>
-                      <div class="fw-800 fs-3">2 500+</div>
-                      <div style="font-size:0.75rem;opacity:0.5;">Produits</div>
-                    </div>
-                  </div>
-                  <div class="col-3">
-                    <div class="p-3 rounded-3 bg-white bg-opacity-10">
-                      <i class="fas fa-truck fs-2 text-accent"></i>
-                      <div class="fw-800 fs-3">10 000+</div>
-                      <div style="font-size:0.75rem;opacity:0.5;">Commandes</div>
-                    </div>
-                  </div>
-                  <div class="col-3">
-                    <div class="p-3 rounded-3 bg-white bg-opacity-10">
-                      <i class="fas fa-face-smile fs-2 text-accent"></i>
-                      <div class="fw-800 fs-3">98%</div>
-                      <div style="font-size:0.75rem;opacity:0.5;">Satisfaits</div>
-                    </div>
-                  </div>
-                </div>
+          </div>
+          
+          <div class="col-6 col-md-3">
+            <div style="background: rgba(196, 93, 44, 0.12); border: 1px solid rgba(196, 93, 44, 0.2); border-radius: 16px; padding: 1.5rem 1rem; transition: all 0.4s ease;"
+                 onmouseover="this.style.background='rgba(196,93,44,0.2)'; this.style.transform='translateY(-6px)'; this.style.boxShadow='0 12px 40px rgba(196,93,44,0.15)';"
+                 onmouseout="this.style.background='rgba(196,93,44,0.12)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 0.5rem;">
+                <i class="fas fa-box" style="color: #FDE68A; font-size: 1.6rem; opacity:0.9;"></i>
               </div>
-            </section>
-          `;
-        }
+              <div style="font-size: 2.5rem; font-weight: 800; color: #FDE68A; line-height: 1.2; text-shadow: 0 0 40px rgba(253, 230, 138, 0.1);">
+                ${totalProduits}
+              </div>
+              <div style="font-size:0.75rem; color: rgba(253, 230, 138, 0.5); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-top: 2px;">
+                Produits
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-6 col-md-3">
+            <div style="background: rgba(2, 132, 199, 0.12); border: 1px solid rgba(2, 132, 199, 0.2); border-radius: 16px; padding: 1.5rem 1rem; transition: all 0.4s ease;"
+                 onmouseover="this.style.background='rgba(2,132,199,0.2)'; this.style.transform='translateY(-6px)'; this.style.boxShadow='0 12px 40px rgba(2,132,199,0.15)';"
+                 onmouseout="this.style.background='rgba(2,132,199,0.12)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 0.5rem;">
+                <i class="fas fa-truck" style="color: #7DD3FC; font-size: 1.6rem; opacity:0.9;"></i>
+              </div>
+              <div style="font-size: 2.5rem; font-weight: 800; color: #7DD3FC; line-height: 1.2; text-shadow: 0 0 40px rgba(125, 211, 252, 0.1);">
+                ${totalCommandes}
+              </div>
+              <div style="font-size:0.75rem; color: rgba(125, 211, 252, 0.5); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-top: 2px;">
+                Commandes
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-6 col-md-3">
+            <div style="background: rgba(124, 58, 237, 0.12); border: 1px solid rgba(124, 58, 237, 0.2); border-radius: 16px; padding: 1.5rem 1rem; transition: all 0.4s ease;"
+                 onmouseover="this.style.background='rgba(124,58,237,0.2)'; this.style.transform='translateY(-6px)'; this.style.boxShadow='0 12px 40px rgba(124,58,237,0.15)';"
+                 onmouseout="this.style.background='rgba(124,58,237,0.12)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 0.5rem;">
+                <i class="fas fa-face-smile" style="color: #D8B4FE; font-size: 1.6rem; opacity:0.9;"></i>
+              </div>
+              <div style="font-size: 2.5rem; font-weight: 800; color: #D8B4FE; line-height: 1.2; text-shadow: 0 0 40px rgba(216, 180, 254, 0.1);">
+                ${tauxSatisfaction}%
+              </div>
+              <div style="font-size:0.75rem; color: rgba(216, 180, 254, 0.5); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-top: 2px;">
+                Satisfaits
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== BANNIÈRE D'APPEL À L'ACTION ===== -->
+    <section style="background: linear-gradient(135deg, #C45D2C, #A84D22); padding: 3rem 0;">
+      <div class="container">
+        <div class="row align-items-center">
+          <div class="col-lg-8">
+            <h5 style="font-weight: 800; color: #fff; font-size: 1.5rem; margin-bottom: 0.5rem;">
+              <i class="fas fa-rocket" style="margin-right: 10px;"></i>Prêt à vendre ou acheter ?
+            </h5>
+            <p style="color: rgba(255,255,255,0.8); font-size: 0.95rem; margin: 0;">
+              Rejoignez la communauté UviraMarket et développez votre activité localement.
+            </p>
+          </div>
+          <div class="col-lg-4 text-lg-end" style="margin-top: 1rem;">
+            <button onclick="go('register')" 
+                    style="background: #fff; color: #C45D2C; border: none; padding: 12px 36px; border-radius: 50px; font-weight: 700; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(0,0,0,0.15);"
+                    onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 32px rgba(0,0,0,0.25)';"
+                    onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 20px rgba(0,0,0,0.15)';">
+              <i class="fas fa-user-plus me-2"></i> Créer un compte
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
 
         /* ===== CARTE PRODUIT ===== */
 
         function pCard(p) {
-            const v = ven(p.vendeurId);
-            const prix = p.prixPromo || p.prix;
-            const liked = S.user && p.likes.includes(S.user.id);
-            const lkN = p.likes.length;
+              const v = getVendeur(p.vendeurId); // Remplacer ven() par getVendeur()
+              const prix = p.prixPromo || p.prix;
+              const liked = S.user && p.likes.includes(S.user.id);
+              const lkN = p.likes.length;
 
             return `
             <div class="p-card">
@@ -2920,36 +3588,67 @@
             setTimeout(scrollChat, 50);
         }
 
-        function handleMsgFile(input) {
-            const file = input.files[0];
-            if (!file) return;
+  function handleMsgFile(input) {
+      const file = input.files[0];
+      if (!file) return;
 
-            // Vérifier la taille (max 5MB)
-            if (file.size > 5 * 1024 * 1024) {
-                toast('Fichier trop volumineux (max 5MB)', 'err');
-                return;
-            }
+      // Vérifier la taille (max 1MB pour éviter les problèmes localStorage)
+      if (file.size > 1 * 1024 * 1024) {
+          toast('Fichier trop volumineux (max 1MB)', 'err');
+          input.value = '';
+          return;
+      }
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const data = e.target.result;
-                const convId = S.chatConvId;
-                if (!convId) { toast('Aucune conversation active', 'err'); return; }
+      const convId = S.chatConvId;
+      if (!convId) { toast('Aucune conversation active', 'err'); return; }
 
-                let mediaType = 'image';
-                if (file.type.startsWith('video/')) mediaType = 'video';
-                else if (file.type.startsWith('audio/')) mediaType = 'audio';
-
-                sendMessage(convId, `📎 ${file.name}`, {
-                    type: mediaType,
-                    data: data,
-                    name: file.name,
-                    size: file.size
-                });
-                input.value = '';
-            };
-            reader.readAsDataURL(file);
-        }
+      const reader = new FileReader();
+      reader.onload = function(e) {
+          const data = e.target.result;
+          
+          let mediaType = 'image';
+          if (file.type.startsWith('video/')) mediaType = 'video';
+          else if (file.type.startsWith('audio/')) mediaType = 'audio';
+          
+          // Créer un message avec média
+          const conv = S.msgs.find(m => m.convId === convId);
+          const parts = conv ? conv.participants : [S.user.id];
+          
+          const msg = {
+              id: Date.now() + Math.random(),
+              convId: convId,
+              type: conv?.type || 'prive',
+              orderId: conv?.orderId || null,
+              from: S.user.id,
+              fromN: S.user.nom,
+              fromPh: S.user.photo || null,
+              participants: [...parts],
+              texte: `📎 ${file.name}`,
+              date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+              lu: [],
+              media: {
+                  type: mediaType,
+                  data: data,
+                  name: file.name,
+                  size: file.size
+              }
+          };
+          
+          S.msgs.push(msg);
+          save();
+          renderAll();
+          setTimeout(scrollChat, 50);
+          toast('Fichier envoyé');
+      };
+      
+      reader.onerror = function() {
+          toast('Erreur lors de la lecture du fichier', 'err');
+          input.value = '';
+      };
+      
+      reader.readAsDataURL(file);
+      input.value = '';
+  }
 
         function scrollChat() {
             const ca = document.getElementById('chatArea');
@@ -3346,7 +4045,23 @@
             if (file.size > 2 * 1024 * 1024) { toast('Image trop grande (max 2MB)', 'err'); return; }
             const reader = new FileReader();
             reader.onload = function(e) {
-                S.user.photo = e.target.result;
+                const photoData = e.target.result;
+                S.user.photo = photoData;
+                
+                // Mettre à jour dans la base des utilisateurs
+                const db = getUsersDB();
+                const uIndex = db.findIndex(x => x.id === S.user.id);
+                if (uIndex !== -1) {
+                    db[uIndex].photo = photoData;
+                    saveUsersDB(db);
+                }
+                
+                // Mettre à jour dans VEND si le vendeur existe
+                const vIndex = VEND.findIndex(x => x.id === S.user.id);
+                if (vIndex !== -1) {
+                    VEND[vIndex].photo = photoData;
+                }
+                
                 save();
                 toast('Photo mise à jour');
                 renderAll();
@@ -4712,73 +5427,101 @@
         }
 
         function saveProd(pid) {
-            const nom = document.getElementById('pfNom')?.value?.trim();
-            const catId = parseInt(document.getElementById('pfCat')?.value);
-            const unite = document.getElementById('pfUnite')?.value;
-            const prix = parseFloat(document.getElementById('pfPrix')?.value);
-            const devise = document.getElementById('pfDev')?.value;
-            const stock = parseInt(document.getElementById('pfStock')?.value);
-            const promo = parseFloat(document.getElementById('pfPromo')?.value) || null;
-            const desc = document.getElementById('pfDesc')?.value?.trim();
+          const nom = document.getElementById('pfNom')?.value?.trim();
+          const catId = parseInt(document.getElementById('pfCat')?.value);
+          const unite = document.getElementById('pfUnite')?.value;
+          const prix = parseFloat(document.getElementById('pfPrix')?.value);
+          const devise = document.getElementById('pfDev')?.value;
+          const stock = parseInt(document.getElementById('pfStock')?.value);
+          const promo = parseFloat(document.getElementById('pfPromo')?.value) || null;
+          const desc = document.getElementById('pfDesc')?.value?.trim();
 
-            if (!nom || !catId || !unite || !prix || !stock || !desc) {
-                toast('Remplissez les champs obligatoires', 'err');
-                return;
-            }
+          if (!nom || !catId || !unite || !prix || !stock || !desc) {
+              toast('Remplissez les champs obligatoires', 'err');
+              return;
+          }
 
-            if (!pid && !prodImgData) {
-                toast('Téléchargez une photo du produit', 'err');
-                return;
-            }
+          if (!pid && !prodImgData) {
+              toast('Téléchargez une photo du produit', 'err');
+              return;
+          }
 
-            const img1 = prodImgData ||
-                `https://images.unsplash.com/photo-1596545352303-3be60a53b176?w=400&h=400&fit=crop&q=80`;
+          // === AJOUT : S'assurer que le vendeur existe dans VEND ===
+          const existingVendor = VEND.find(v => v.id === S.user.id);
+          if (!existingVendor && S.user.role === 'vendeur') {
+              const db = getUsersDB();
+              const u = db.find(x => x.id === S.user.id);
+              
+              VEND.push({
+                  id: S.user.id,
+                  nom: S.user.nom || u?.nom || 'Vendeur',
+                  sexe: S.user.sexe || u?.sexe || 'N/A',
+                  age: S.user.age || u?.age || 30,
+                  tel: S.user.telephone || S.user.tel || u?.telephone || '',
+                  province: S.user.province || u?.province || 'Sud-Kivu',
+                  territoire: S.user.territoire || u?.territoire || 'Uvira',
+                  quartier: S.user.quartier || u?.quartier || '',
+                  avenue: S.user.avenue || u?.avenue || '',
+                  photo: S.user.photo || u?.photo || null,
+                  note: S.user.note || u?.note || 0,
+                  ventes: S.user.ventes || u?.ventes || 0,
+                  boutique: S.user.boutique || u?.boutique || (S.user.nom + ' Boutique'),
+                  devise: S.user.devise || u?.devise || 'FC',
+                  actif: true
+              });
+              save();
+              toast('Vendeur enregistré automatiquement');
+          }
 
-            if (pid) {
-                const p = S.products.find(x => x.id === pid);
-                if (p) {
-                    p.nom = nom;
-                    p.categorieId = catId;
-                    p.unite = unite;
-                    p.prix = prix;
-                    p.devise = devise;
-                    p.stock = stock;
-                    p.prixPromo = promo && promo < prix ? promo : null;
-                    p.enPromotion = !!(promo && promo < prix);
-                    p.description = desc;
-                    if (prodImgData) p.images[0] = img1;
-                }
-            } else {
-                const newId = Math.max(...S.products.map(x => x.id), 0) + 1;
-                S.products.push({
-                    id: newId,
-                    nom,
-                    categorieId: catId,
-                    prix,
-                    prixPromo: promo && promo < prix ? promo : null,
-                    unite,
-                    description: desc,
-                    devise,
-                    images: [img1, img1],
-                    vendeurId: S.user.id,
-                    stock,
-                    commune: "Uvira",
-                    note: 0,
-                    nbAvis: 0,
-                    datePublication: new Date().toISOString().slice(0, 10),
-                    enPromotion: !!(promo && promo < prix),
-                    ventes: 0,
-                    likes: [],
-                    actif: true
-                });
-            }
+          const img1 = prodImgData || 
+              `https://images.unsplash.com/photo-1596545352303-3be60a53b176?w=400&h=400&fit=crop&q=80`;
 
-            prodImgData = null;
-            save();
-            closeModal();
-            toast(pid ? 'Produit modifié' : 'Produit publié');
-            renderAll();
-        }
+          if (pid) {
+              const p = S.products.find(x => x.id === pid);
+              if (p) {
+                  p.nom = nom;
+                  p.categorieId = catId;
+                  p.unite = unite;
+                  p.prix = prix;
+                  p.devise = devise;
+                  p.stock = stock;
+                  p.prixPromo = promo && promo < prix ? promo : null;
+                  p.enPromotion = !!(promo && promo < prix);
+                  p.description = desc;
+                  p.vendeurId = S.user.id; // S'assurer que le vendeurId est correct
+                  if (prodImgData) p.images[0] = img1;
+              }
+          } else {
+              const newId = Math.max(...S.products.map(x => x.id), 0) + 1;
+              S.products.push({
+                  id: newId,
+                  nom: nom,
+                  categorieId: catId,
+                  prix: prix,
+                  prixPromo: promo && promo < prix ? promo : null,
+                  unite: unite,
+                  description: desc,
+                  devise: devise,
+                  images: [img1, img1],
+                  vendeurId: S.user.id, // Utiliser l'ID de l'utilisateur connecté
+                  stock: stock,
+                  commune: "Uvira",
+                  note: 0,
+                  nbAvis: 0,
+                  datePublication: new Date().toISOString().slice(0, 10),
+                  enPromotion: !!(promo && promo < prix),
+                  ventes: 0,
+                  likes: [],
+                  actif: true
+              });
+          }
+
+          prodImgData = null;
+          save();
+          closeModal();
+          toast(pid ? 'Produit modifié' : 'Produit publié');
+          renderAll();
+      }
 
         function toggleProdActif(pid) {
             const p = S.products.find(x => x.id === pid);
@@ -4968,73 +5711,163 @@
         /* ===== FOOTER ===== */
 
         function renderFooter() {
-            document.getElementById('app-footer').innerHTML = `
-            <div class="container">
-              <div class="row g-4">
-                <div class="col-lg-4">
-                  <div class="d-flex align-items-center gap-2 mb-3">
-                    <div class="bg-primary bg-opacity-20 rounded-3 d-flex align-items-center justify-content-center" style="width:36px;height:36px;">
-                      <i class="fas fa-store text-white" style="font-size:0.85rem;"></i>
-                    </div>
-                    <span class="fw-800 text-white" style="font-size:1.2rem;">Uvira<span class="text-primary">Market</span></span>
-                  </div>
-                  <p style="font-size:0.8rem;line-height:1.7;opacity:0.6;">Le marché numérique local d'Uvira, Sud-Kivu, RDC. Achetez et vendez simplement en 2026.</p>
-                  <div class="d-flex gap-2">
-                    <a class="bg-white bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center" style="width:36px;height:36px;transition:0.2s;cursor:pointer;" title="Facebook">
-                      <i class="fab fa-facebook-f" style="font-size:0.85rem;"></i>
-                    </a>
-                    <a class="bg-white bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center" style="width:36px;height:36px;transition:0.2s;cursor:pointer;" title="YouTube">
-                      <i class="fab fa-youtube" style="font-size:0.85rem;"></i>
-                    </a>
-                    <a class="bg-white bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center" style="width:36px;height:36px;transition:0.2s;cursor:pointer;" title="WhatsApp">
-                      <i class="fab fa-whatsapp" style="font-size:0.85rem;"></i>
-                    </a>
-                  </div>
-                </div>
-
-                <div class="col-6 col-sm-3">
-                  <h6 class="fw-700 text-white" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;opacity:0.8;">Navigation</h6>
-                  <div class="d-flex flex-column gap-1" style="font-size:0.8rem;opacity:0.6;">
-                    <a onclick="go('home')" style="cursor:pointer;">Accueil</a>
-                    <a onclick="go('catalog')" style="cursor:pointer;">Catalogue</a>
-                    <a onclick="go('register')" style="cursor:pointer;">Devenir vendeur</a>
-                    <a onclick="go('login')" style="cursor:pointer;">Connexion</a>
-                  </div>
-                </div>
-
-                <div class="col-6 col-sm-3">
-                  <h6 class="fw-700 text-white" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;opacity:0.8;">Catégories</h6>
-                  <div class="d-flex flex-column gap-1" style="font-size:0.8rem;opacity:0.6;">
-                    ${CATS.slice(0,6).map(c => `
-                      <a onclick="S.filters.catId=${c.id};go('catalog')" style="cursor:pointer;">
-                        <i class="fas ${c.icon} me-1" style="color:${c.color};font-size:0.6rem;"></i>${c.nom}
-                      </a>
-                    `).join('')}
-                  </div>
-                </div>
-
-                <div class="col-sm-3">
-                  <h6 class="fw-700 text-white" style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px;opacity:0.8;">Contact</h6>
-                  <div class="d-flex flex-column gap-2" style="font-size:0.8rem;opacity:0.6;">
-                    <div><i class="fas fa-map-marker-alt text-primary me-2" style="width:16px;"></i>Uvira Centre, Sud-Kivu</div>
-                    <div><i class="fas fa-phone text-primary me-2" style="width:16px;"></i>+243 837 373 464</div>
-                    <div><i class="fas fa-envelope text-primary me-2" style="width:16px;"></i>hubtechdrc@gmail.com</div>
-                    <div><i class="fas fa-clock text-primary me-2" style="width:16px;"></i>24h/24 — 7j/7</div>
-                  </div>
-                </div>
+    document.getElementById('app-footer').innerHTML = `
+    <div style="background: linear-gradient(180deg, #1a1a2e 0%, #2D1810 50%, #0f0f0f 100%); padding: 3rem 0 1.5rem 0; margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.05);">
+      <div class="container">
+        <div class="row g-4">
+          
+          <!-- Colonne 1 : Logo et réseaux sociaux -->
+          <div class="col-lg-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <div style="background: linear-gradient(135deg, #2D6A4F, #C45D2C); border-radius: 12px; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; box-shadow: 0 4px 20px rgba(196, 93, 44, 0.3);">
+                <i class="fas fa-store text-white" style="font-size:1.1rem;"></i>
               </div>
+              <span style="font-weight:800; font-size:1.4rem; color: #fff;">Uvira<span style="color: #C45D2C;">Market</span></span>
+            </div>
+            <p style="font-size:0.85rem; line-height:1.8; color: rgba(255,255,255,0.5); max-width: 320px;">
+              Le marché numérique local d'Uvira, Sud-Kivu, RDC. Achetez et vendez simplement en 2026.
+            </p>
+            <div class="d-flex gap-3 mt-3">
+              <!-- Facebook -->
+              <a href="https://www.facebook.com/profile.php?id=61588190810548" target="_blank" 
+                 style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; text-decoration:none; transition: all 0.3s ease;"
+                 onmouseover="this.style.background='#1877F2'; this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(24,119,242,0.4)';"
+                 onmouseout="this.style.background='rgba(255,255,255,0.08)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';"
+                 title="Facebook">
+                <i class="fab fa-facebook-f" style="font-size:0.95rem;"></i>
+              </a>
+              <!-- YouTube -->
+              <a href="https://youtube.com/@hubtechdrc?si=TBOERxqZ5r6x81qi" target="_blank" 
+                 style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; text-decoration:none; transition: all 0.3s ease;"
+                 onmouseover="this.style.background='#FF0000'; this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(255,0,0,0.4)';"
+                 onmouseout="this.style.background='rgba(255,255,255,0.08)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';"
+                 title="YouTube">
+                <i class="fab fa-youtube" style="font-size:0.95rem;"></i>
+              </a>
+              <!-- WhatsApp -->
+              <a href="https://chat.whatsapp.com/GgwyBeBTqSu8wBcDb2ZMI4?mode=gi_t" target="_blank" 
+                 style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; text-decoration:none; transition: all 0.3s ease;"
+                 onmouseover="this.style.background='#25D366'; this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(37,211,102,0.4)';"
+                 onmouseout="this.style.background='rgba(255,255,255,0.08)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';"
+                 title="WhatsApp">
+                <i class="fab fa-whatsapp" style="font-size:0.95rem;"></i>
+              </a>
+              <!-- Twitter/X -->
+              <a href="https://github.com/ngombomibaraka-eng" target="_blank" 
+                 style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #fff; text-decoration:none; transition: all 0.3s ease;"
+                 onmouseover="this.style.background='#000000'; this.style.transform='translateY(-3px)'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.4)';"
+                 onmouseout="this.style.background='rgba(255,255,255,0.08)'; this.style.transform='translateY(0)'; this.style.boxShadow='none';"
+                 title="github">
+                <i class="fab fa-github" style="font-size:0.95rem;"></i>
+              </a>
+            </div>
+          </div>
 
-              <div class="border-top border-white border-opacity-10 mt-4 pt-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <span style="font-size:0.7rem;opacity:0.3;">&copy; 2026 UviraMarket. Tous droits réservés.</span>
-                <div class="d-flex gap-3" style="font-size:0.7rem;opacity:0.5;">
-                  <span><i class="fas fa-shield-halved text-success me-1"></i>Paiements sécurisés</span>
-                  <span><i class="fas fa-truck-fast text-accent me-1"></i>Livraison rapide</span>
-                </div>
+          <!-- Colonne 2 : Navigation -->
+          <div class="col-6 col-sm-3">
+            <h6 style="font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:1.5px; color: rgba(255,255,255,0.8); margin-bottom: 1rem; position:relative;">
+              Navigation
+              <span style="display:block; width:30px; height:2px; background: linear-gradient(90deg, #C45D2C, #D4A017); margin-top:4px;"></span>
+            </h6>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; font-size:0.85rem;">
+              <a onclick="go('home')" style="cursor:pointer; color: rgba(255,255,255,0.5); text-decoration:none; transition: all 0.2s ease;"
+                 onmouseover="this.style.color='#fff'; this.style.transform='translateX(4px)';"
+                 onmouseout="this.style.color='rgba(255,255,255,0.5)'; this.style.transform='translateX(0)';">
+                <i class="fas fa-chevron-right" style="font-size:0.5rem; margin-right:6px; color: #C45D2C;"></i>Accueil
+              </a>
+              <a onclick="go('catalog')" style="cursor:pointer; color: rgba(255,255,255,0.5); text-decoration:none; transition: all 0.2s ease;"
+                 onmouseover="this.style.color='#fff'; this.style.transform='translateX(4px)';"
+                 onmouseout="this.style.color='rgba(255,255,255,0.5)'; this.style.transform='translateX(0)';">
+                <i class="fas fa-chevron-right" style="font-size:0.5rem; margin-right:6px; color: #C45D2C;"></i>Catalogue
+              </a>
+              <a onclick="go('register')" style="cursor:pointer; color: rgba(255,255,255,0.5); text-decoration:none; transition: all 0.2s ease;"
+                 onmouseover="this.style.color='#fff'; this.style.transform='translateX(4px)';"
+                 onmouseout="this.style.color='rgba(255,255,255,0.5)'; this.style.transform='translateX(0)';">
+                <i class="fas fa-chevron-right" style="font-size:0.5rem; margin-right:6px; color: #C45D2C;"></i>Devenir vendeur
+              </a>
+              <a onclick="go('login')" style="cursor:pointer; color: rgba(255,255,255,0.5); text-decoration:none; transition: all 0.2s ease;"
+                 onmouseover="this.style.color='#fff'; this.style.transform='translateX(4px)';"
+                 onmouseout="this.style.color='rgba(255,255,255,0.5)'; this.style.transform='translateX(0)';">
+                <i class="fas fa-chevron-right" style="font-size:0.5rem; margin-right:6px; color: #C45D2C;"></i>Connexion
+              </a>
+              <a onclick="go('params')" style="cursor:pointer; color: rgba(255,255,255,0.5); text-decoration:none; transition: all 0.2s ease;"
+                 onmouseover="this.style.color='#fff'; this.style.transform='translateX(4px)';"
+                 onmouseout="this.style.color='rgba(255,255,255,0.5)'; this.style.transform='translateX(0)';">
+                <i class="fas fa-chevron-right" style="font-size:0.5rem; margin-right:6px; color: #C45D2C;"></i>Paramètres
+              </a>
+            </div>
+          </div>
+
+          <!-- Colonne 3 : Toutes les catégories -->
+          <div class="col-6 col-sm-3">
+            <h6 style="font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:1.5px; color: rgba(255,255,255,0.8); margin-bottom: 1rem; position:relative;">
+              Catégories
+              <span style="display:block; width:30px; height:2px; background: linear-gradient(90deg, #C45D2C, #D4A017); margin-top:4px;"></span>
+            </h6>
+            <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.8rem; max-height: 200px; overflow-y: auto; padding-right: 4px;">
+              ${CATS.map(c => `
+                <a onclick="S.filters.catId=${c.id};go('catalog')" style="cursor:pointer; color: rgba(255,255,255,0.5); text-decoration:none; transition: all 0.2s ease; display:flex; align-items:center; gap:6px;"
+                   onmouseover="this.style.color='#fff'; this.style.transform='translateX(4px)';"
+                   onmouseout="this.style.color='rgba(255,255,255,0.5)'; this.style.transform='translateX(0)';">
+                  <i class="fas ${c.icon}" style="color:${c.color}; font-size:0.7rem; width:16px; text-align:center;"></i>
+                  <span>${c.nom}</span>
+                </a>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Colonne 4 : Contact -->
+          <div class="col-sm-3">
+            <h6 style="font-weight:700; font-size:0.75rem; text-transform:uppercase; letter-spacing:1.5px; color: rgba(255,255,255,0.8); margin-bottom: 1rem; position:relative;">
+              Contact
+              <span style="display:block; width:30px; height:2px; background: linear-gradient(90deg, #C45D2C, #D4A017); margin-top:4px;"></span>
+            </h6>
+            <div style="display:flex; flex-direction:column; gap:0.8rem; font-size:0.85rem; color: rgba(255,255,255,0.5);">
+              <div style="display:flex; align-items:center; gap:10px; transition: all 0.2s ease;"
+                   onmouseover="this.style.color='#fff';"
+                   onmouseout="this.style.color='rgba(255,255,255,0.5)';">
+                <i class="fas fa-map-marker-alt" style="color: #C45D2C; width:18px; font-size:0.9rem;"></i>
+                <span>Uvira Centre, Sud-Kivu</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; transition: all 0.2s ease;"
+                   onmouseover="this.style.color='#fff';"
+                   onmouseout="this.style.color='rgba(255,255,255,0.5)';">
+                <i class="fas fa-phone" style="color: #C45D2C; width:18px; font-size:0.9rem;"></i>
+                <span>+243 837 373 464</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; transition: all 0.2s ease;"
+                   onmouseover="this.style.color='#fff';"
+                   onmouseout="this.style.color='rgba(255,255,255,0.5)';">
+                <i class="fas fa-envelope" style="color: #C45D2C; width:18px; font-size:0.9rem;"></i>
+                <span>hubtechdrc@gmail.com</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; transition: all 0.2s ease;"
+                   onmouseover="this.style.color='#fff';"
+                   onmouseout="this.style.color='rgba(255,255,255,0.5)';">
+                <i class="fas fa-clock" style="color: #C45D2C; width:18px; font-size:0.9rem;"></i>
+                <span>24h/24 — 7j/7</span>
               </div>
             </div>
-          `;
-        }
+          </div>
 
+        </div>
+
+        <!-- Séparateur et copyright -->
+        <div style="border-top: 1px solid rgba(255,255,255,0.06); margin-top: 2rem; padding-top: 1.5rem; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+          <span style="font-size:0.75rem; color: rgba(255,255,255,0.25);">
+            &copy; 2026 UviraMarket. Tous droits réservés.
+          </span>
+          <div style="display: flex; gap: 1.5rem; font-size:0.7rem; color: rgba(255,255,255,0.3);">
+            <span><i class="fas fa-shield-halved" style="color: #22C55E; margin-right:4px;"></i>Paiements sécurisés</span>
+            <span><i class="fas fa-truck-fast" style="color: #D4A017; margin-right:4px;"></i>Livraison rapide</span>
+            <span><i class="fas fa-headset" style="color: #C45D2C; margin-right:4px;"></i>Support 24h/24</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
         /* ===== INITIALISATION ===== */
 
         localStorage.removeItem('uv5_user');
