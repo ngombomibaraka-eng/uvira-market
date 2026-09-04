@@ -4874,66 +4874,192 @@
         }
 
         /* ===== ADMIN — CRUD Utilisateurs ===== */
-
         function pgAdminUsers() {
-            return `
-            <div class="dash-card">
-              <h6 class="fw-700 mb-3">Gestion des inscrits (${VEND.length} vendeurs + ${LIVREURS.length} livreurs)</h6>
-              <div class="table-responsive">
-                <table class="at">
-                  <thead><tr>
-                    <th></th><th>Nom</th><th>Rôle</th><th>Tél</th><th>Province</th><th>Territoire</th><th>Quartier</th><th>Actif</th><th>Actions</th>
-                  </tr></thead>
-                  <tbody>
-                    ${VEND.map(v => `
-                      <tr>
-                        <td>${avHTML(v.photo,v.nom,28,9)}</td>
-                        <td class="fw-600" style="font-size:0.8rem;">${v.nom}</td>
-                        <td><span class="st-badge bg-primary bg-opacity-10 text-primary">Vendeur</span></td>
-                        <td style="font-size:0.7rem;">${v.tel}</td>
-                        <td style="font-size:0.7rem;">${v.province||'-'}</td>
-                        <td style="font-size:0.7rem;">${v.territoire||'-'}</td>
-                        <td style="font-size:0.7rem;">${v.quartier||'-'}</td>
-                        <td>${v.actif===false ? '<span class="st-badge bg-danger bg-opacity-10 text-danger">Non</span>' : '<span class="st-badge bg-success bg-opacity-10 text-success">Oui</span>'}</td>
-                        <td>
-                          <div class="d-flex gap-1">
-                            <button onclick="adminEditUser(${v.id},'vendeur')" class="crud-btn crud-edit"><i class="fas fa-pen"></i></button>
-                            <button onclick="adminToggleUser(${v.id},'vendeur')" class="crud-btn" style="background:${v.actif===false?'#22C55E20':'#F9731620'};color:${v.actif===false?'#22C55E':'#F97316'};">
-                              <i class="fas fa-${v.actif===false?'eye':'eye-slash'}"></i>
-                            </button>
-                            <button onclick="adminDeleteUser(${v.id},'vendeur')" class="crud-btn crud-del"><i class="fas fa-trash"></i></button>
-                          </div>
-                        </td>
-                      </tr>
-                    `).join('')}
-                    ${LIVREURS.map(l => `
-                      <tr>
-                        <td>${avHTML(l.photo,l.nom,28,9)}</td>
-                        <td class="fw-600" style="font-size:0.8rem;">${l.nom}</td>
-                        <td><span class="st-badge bg-purple bg-opacity-10 text-purple">Livreur</span></td>
-                        <td style="font-size:0.7rem;">${l.tel}</td>
-                        <td style="font-size:0.7rem;">Sud-Kivu</td>
-                        <td style="font-size:0.7rem;">Uvira</td>
-                        <td style="font-size:0.7rem;">---</td>
-                        <td>${l.disponible ? '<span class="st-badge bg-success bg-opacity-10 text-success">Oui</span>' : '<span class="st-badge bg-danger bg-opacity-10 text-danger">Non</span>'}</td>
-                        <td>
-                          <div class="d-flex gap-1">
-                            <button onclick="adminEditUser(${l.id},'livreur')" class="crud-btn crud-edit"><i class="fas fa-pen"></i></button>
-                            <button onclick="adminToggleUser(${l.id},'livreur')" class="crud-btn" style="background:${l.disponible?'#F9731620':'#22C55E20'};color:${l.disponible?'#F97316':'#22C55E'};">
-                              <i class="fas fa-${l.disponible?'eye-slash':'eye'}"></i>
-                            </button>
-                            <button onclick="adminDeleteUser(${l.id},'livreur')" class="crud-btn crud-del"><i class="fas fa-trash"></i></button>
-                          </div>
-                        </td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
+          // Récupérer TOUS les utilisateurs de la base de données
+          const db = getUsersDB();
+          
+          // Séparer par rôle
+          const acheteurs = db.filter(u => u.role === 'acheteur' && u.actif !== false);
+          
+          // Récupérer TOUS les vendeurs : ceux dans VEND + ceux dans la base
+          const vendeursDB = db.filter(u => u.role === 'vendeur' && u.actif !== false);
+          const vendeursVEND = VEND.filter(v => v.actif !== false);
+          
+          // Fusionner les vendeurs (éviter les doublons)
+          const vendeursMap = {};
+          vendeursVEND.forEach(v => { vendeursMap[v.id] = v; });
+          vendeursDB.forEach(v => { 
+              if (!vendeursMap[v.id]) {
+                  vendeursMap[v.id] = {
+                      id: v.id,
+                      nom: v.nom || 'Vendeur',
+                      sexe: v.sexe || 'N/A',
+                      age: v.age || 30,
+                      tel: v.telephone || v.tel || '',
+                      province: v.province || 'Sud-Kivu',
+                      territoire: v.territoire || 'Uvira',
+                      quartier: v.quartier || '',
+                      avenue: v.avenue || '',
+                      photo: v.photo || null,
+                      note: v.note || 0,
+                      ventes: v.ventes || 0,
+                      boutique: v.boutique || (v.nom + ' Boutique'),
+                      devise: v.devise || 'FC',
+                      actif: v.actif !== false
+                  };
+              }
+          });
+          const vendeurs = Object.values(vendeursMap);
+          
+          // Livreurs
+          const livreurs = LIVREURS.filter(l => l.disponible !== false);
+          
+          // Compter les totaux
+          const totalAcheteurs = acheteurs.length;
+          const totalVendeurs = vendeurs.length;
+          const totalLivreurs = livreurs.length;
+          const totalInscrits = totalAcheteurs + totalVendeurs + totalLivreurs;
+
+          return `
+          <div class="dash-card">
+            <!-- Statistiques des inscrits -->
+            <div class="row g-3 mb-4">
+              <div class="col-3">
+                <div class="dash-stat">
+                  <div class="dash-stat-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-users"></i></div>
+                  <div><div class="fw-800 fs-5">${totalInscrits}</div><div style="font-size:0.65rem;color:var(--brown-muted);">Total inscrits</div></div>
+                </div>
+              </div>
+              <div class="col-3">
+                <div class="dash-stat">
+                  <div class="dash-stat-icon bg-info bg-opacity-10 text-info"><i class="fas fa-user"></i></div>
+                  <div><div class="fw-800 fs-5">${totalAcheteurs}</div><div style="font-size:0.65rem;color:var(--brown-muted);">Acheteurs</div></div>
+                </div>
+              </div>
+              <div class="col-3">
+                <div class="dash-stat">
+                  <div class="dash-stat-icon bg-secondary bg-opacity-10 text-secondary"><i class="fas fa-store"></i></div>
+                  <div><div class="fw-800 fs-5">${totalVendeurs}</div><div style="font-size:0.65rem;color:var(--brown-muted);">Vendeurs</div></div>
+                </div>
+              </div>
+              <div class="col-3">
+                <div class="dash-stat">
+                  <div class="dash-stat-icon bg-purple bg-opacity-10 text-purple"><i class="fas fa-truck"></i></div>
+                  <div><div class="fw-800 fs-5">${totalLivreurs}</div><div style="font-size:0.65rem;color:var(--brown-muted);">Livreurs</div></div>
+                </div>
               </div>
             </div>
-          `;
-        }
 
+            <!-- Liste des acheteurs -->
+            <h6 class="fw-700 text-brown mb-3">
+              <i class="fas fa-user text-primary me-2"></i>Acheteurs (${totalAcheteurs})
+            </h6>
+            <div class="table-responsive mb-4">
+              <table class="at">
+                <thead><tr>
+                  <th>Photo</th><th>Nom</th><th>Email</th><th>Téléphone</th><th>Province</th><th>Territoire</th><th>Quartier</th><th>Inscrit le</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  ${acheteurs.length ? acheteurs.map(u => `
+                    <tr>
+                      <td>${avHTML(u.photo, u.nom, 32, 10)}</td>
+                      <td class="fw-600" style="font-size:0.8rem;">${u.nom}</td>
+                      <td style="font-size:0.7rem;color:var(--brown-muted);">${u.email || '-'}</td>
+                      <td style="font-size:0.7rem;">${u.telephone || u.tel || '-'}</td>
+                      <td style="font-size:0.7rem;">${u.province || '-'}</td>
+                      <td style="font-size:0.7rem;">${u.territoire || '-'}</td>
+                      <td style="font-size:0.7rem;">${u.quartier || '-'}</td>
+                      <td style="font-size:0.7rem;color:var(--brown-muted);">${u.dateInscription ? fmtD(u.dateInscription) : '-'}</td>
+                      <td>
+                        <div class="d-flex gap-1">
+                          <button onclick="adminEditAcheteur(${u.id})" class="crud-btn crud-edit"><i class="fas fa-pen"></i></button>
+                          <button onclick="adminToggleAcheteur(${u.id})" class="crud-btn" style="background:${u.actif===false?'#22C55E20':'#F9731620'};color:${u.actif===false?'#22C55E':'#F97316'};">
+                            <i class="fas fa-${u.actif===false?'eye':'eye-slash'}"></i>
+                          </button>
+                          <button onclick="adminDeleteAcheteur(${u.id})" class="crud-btn crud-del"><i class="fas fa-trash"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('') : `
+                    <tr><td colspan="9" class="text-center py-3 text-brown-muted" style="font-size:0.8rem;">Aucun acheteur inscrit</td></tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Liste des vendeurs -->
+            <h6 class="fw-700 text-brown mb-3">
+              <i class="fas fa-store text-secondary me-2"></i>Vendeurs (${totalVendeurs})
+            </h6>
+            <div class="table-responsive mb-4">
+              <table class="at">
+                <thead><tr>
+                  <th>Photo</th><th>Nom</th><th>Boutique</th><th>Tél</th><th>Province</th><th>Territoire</th><th>Quartier</th><th>Devise</th><th>Actif</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  ${vendeurs.length ? vendeurs.map(v => `
+                    <tr>
+                      <td>${avHTML(v.photo, v.nom, 32, 10)}</td>
+                      <td class="fw-600" style="font-size:0.8rem;">${v.nom}</td>
+                      <td style="font-size:0.7rem;">${v.boutique || '-'}</td>
+                      <td style="font-size:0.7rem;">${v.tel}</td>
+                      <td style="font-size:0.7rem;">${v.province||'-'}</td>
+                      <td style="font-size:0.7rem;">${v.territoire||'-'}</td>
+                      <td style="font-size:0.7rem;">${v.quartier||'-'}</td>
+                      <td style="font-size:0.7rem;font-weight:700;color:var(--primary);">${v.devise||'FC'}</td>
+                      <td>${v.actif===false ? '<span class="st-badge bg-danger bg-opacity-10 text-danger">Non</span>' : '<span class="st-badge bg-success bg-opacity-10 text-success">Oui</span>'}</td>
+                      <td>
+                        <div class="d-flex gap-1">
+                          <button onclick="adminEditUser(${v.id},'vendeur')" class="crud-btn crud-edit"><i class="fas fa-pen"></i></button>
+                          <button onclick="adminToggleUser(${v.id},'vendeur')" class="crud-btn" style="background:${v.actif===false?'#22C55E20':'#F9731620'};color:${v.actif===false?'#22C55E':'#F97316'};">
+                            <i class="fas fa-${v.actif===false?'eye':'eye-slash'}"></i>
+                          </button>
+                          <button onclick="adminDeleteUser(${v.id},'vendeur')" class="crud-btn crud-del"><i class="fas fa-trash"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('') : `
+                    <tr><td colspan="10" class="text-center py-3 text-brown-muted" style="font-size:0.8rem;">Aucun vendeur inscrit</td></tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Liste des livreurs -->
+            <h6 class="fw-700 text-brown mb-3">
+              <i class="fas fa-truck text-purple me-2"></i>Livreurs (${totalLivreurs})
+            </h6>
+            <div class="table-responsive">
+              <table class="at">
+                <thead><tr>
+                  <th>Photo</th><th>Nom</th><th>Téléphone</th><th>Disponible</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  ${livreurs.length ? livreurs.map(l => `
+                    <tr>
+                      <td>${avHTML(l.photo, l.nom, 32, 10)}</td>
+                      <td class="fw-600" style="font-size:0.8rem;">${l.nom}</td>
+                      <td style="font-size:0.7rem;">${l.tel}</td>
+                      <td>${l.disponible ? '<span class="st-badge bg-success bg-opacity-10 text-success">Oui</span>' : '<span class="st-badge bg-danger bg-opacity-10 text-danger">Non</span>'}</td>
+                      <td>
+                        <div class="d-flex gap-1">
+                          <button onclick="adminEditUser(${l.id},'livreur')" class="crud-btn crud-edit"><i class="fas fa-pen"></i></button>
+                          <button onclick="adminToggleUser(${l.id},'livreur')" class="crud-btn" style="background:${l.disponible?'#F9731620':'#22C55E20'};color:${l.disponible?'#F97316':'#22C55E'};">
+                            <i class="fas fa-${l.disponible?'eye-slash':'eye'}"></i>
+                          </button>
+                          <button onclick="adminDeleteUser(${l.id},'livreur')" class="crud-btn crud-del"><i class="fas fa-trash"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('') : `
+                    <tr><td colspan="5" class="text-center py-3 text-brown-muted" style="font-size:0.8rem;">Aucun livreur disponible</td></tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
         function adminEditUser(id, role) {
             const u = role === 'vendeur' ? VEND.find(x => x.id === id) : LIVREURS.find(x => x.id === id);
             if (!u) return;
@@ -4983,6 +5109,122 @@
             </div>
           `);
         }
+
+        // ===== ADMIN — GESTION DES ACHETEURS =====
+
+function adminEditAcheteur(id) {
+    const db = getUsersDB();
+    const u = db.find(x => x.id === id);
+    if (!u) return;
+
+    openMod(`
+    <div class="p-4">
+      <h6 class="fw-800 text-brown mb-3">Modifier l'acheteur</h6>
+      <div class="mb-3">
+        <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Nom complet *</label>
+        <input id="aaNom" class="fi" value="${u.nom}">
+      </div>
+      <div class="mb-3">
+        <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Email</label>
+        <input id="aaEmail" class="fi" value="${u.email || ''}">
+      </div>
+      <div class="mb-3">
+        <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Téléphone</label>
+        <input id="aaTel" class="fi" value="${u.telephone || u.tel || ''}">
+      </div>
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Province</label>
+          <input id="aaProvince" class="fi" value="${u.province || ''}">
+        </div>
+        <div class="col-6">
+          <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Territoire</label>
+          <input id="aaTerritoire" class="fi" value="${u.territoire || ''}">
+        </div>
+      </div>
+      <div class="row g-2 mb-3">
+        <div class="col-6">
+          <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Quartier</label>
+          <input id="aaQuartier" class="fi" value="${u.quartier || ''}">
+        </div>
+        <div class="col-6">
+          <label style="font-size:0.7rem;font-weight:600;color:var(--brown-muted);">Avenue</label>
+          <input id="aaAvenue" class="fi" value="${u.avenue || ''}">
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-3">
+        <button onclick="adminSaveAcheteur(${id})" class="btn btn-secondary-custom flex-grow-1">
+          <i class="fas fa-save me-1"></i> Enregistrer
+        </button>
+        <button onclick="closeModal()" class="btn btn-outline-custom">Annuler</button>
+      </div>
+    </div>
+  `);
+}
+
+function adminSaveAcheteur(id) {
+    const db = getUsersDB();
+    const u = db.find(x => x.id === id);
+    if (!u) { toast('Utilisateur non trouvé', 'err'); return; }
+
+    const nom = document.getElementById('aaNom')?.value?.trim();
+    if (!nom) { toast('Nom requis', 'err'); return; }
+
+    u.nom = nom;
+    u.email = document.getElementById('aaEmail')?.value?.trim() || u.email;
+    u.telephone = document.getElementById('aaTel')?.value?.trim() || u.telephone;
+    u.province = document.getElementById('aaProvince')?.value?.trim() || u.province;
+    u.territoire = document.getElementById('aaTerritoire')?.value?.trim() || u.territoire;
+    u.quartier = document.getElementById('aaQuartier')?.value?.trim() || u.quartier;
+    u.avenue = document.getElementById('aaAvenue')?.value?.trim() || u.avenue;
+
+    saveUsersDB(db);
+    closeModal();
+    toast('Acheteur modifié avec succès !');
+    renderAll();
+}
+
+function adminToggleAcheteur(id) {
+    const db = getUsersDB();
+    const u = db.find(x => x.id === id);
+    if (u) {
+        u.actif = u.actif === false ? true : false;
+        saveUsersDB(db);
+        toast(u.actif ? 'Acheteur activé' : 'Acheteur désactivé');
+        renderAll();
+    }
+}
+
+function adminDeleteAcheteur(id) {
+    openMod(`
+    <div class="p-4 text-center">
+      <div class="bg-danger bg-opacity-10 rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3" style="width:56px;height:56px;">
+        <i class="fas fa-user-slash text-danger" style="font-size:1.3rem;"></i>
+      </div>
+      <h6 class="fw-700 text-brown">Supprimer cet acheteur ?</h6>
+      <p style="font-size:0.8rem;color:var(--brown-muted);">Action irréversible. Toutes les données de l'acheteur seront supprimées.</p>
+      <div class="d-flex gap-2 justify-content-center">
+        <button onclick="confirmDeleteAcheteur(${id})" class="btn btn-danger-custom">Supprimer</button>
+        <button onclick="closeModal()" class="btn btn-outline-custom">Annuler</button>
+      </div>
+    </div>
+  `);
+}
+
+function confirmDeleteAcheteur(id) {
+    let db = getUsersDB();
+    db = db.filter(u => u.id !== id);
+    saveUsersDB(db);
+    
+    // Supprimer aussi les commandes et messages de cet acheteur
+    S.orders = S.orders.filter(o => o.acheteurId !== id);
+    S.msgs = S.msgs.filter(m => m.from !== id && (!m.participants || !m.participants.includes(id)));
+    
+    save();
+    closeModal();
+    toast('Acheteur supprimé');
+    renderAll();
+}
 
         function adminSaveUser(id, role) {
             const nom = document.getElementById('auNom')?.value?.trim();
@@ -5929,6 +6171,11 @@
         window.toast = toast;
         window.toggleIAChat = toggleIAChat;
         window.sendIAMessage = sendIAMessage;
+        window.adminEditAcheteur = adminEditAcheteur;
+        window.adminSaveAcheteur = adminSaveAcheteur;
+        window.adminToggleAcheteur = adminToggleAcheteur;
+        window.adminDeleteAcheteur = adminDeleteAcheteur;
+        window.confirmDeleteAcheteur = confirmDeleteAcheteur;
     </script>
 </body>
 </html>
