@@ -6112,9 +6112,14 @@ function confirmDeleteAcheteur(id) {
 }
         /* ===== INITIALISATION ===== */
 
+        // Nettoyer les anciennes sessions
         localStorage.removeItem('uv5_user');
         localStorage.removeItem('uv5_session');
 
+        // Synchroniser TOUS les vendeurs depuis la base de données
+        syncVendeursFromDB();
+
+        // Initialiser l'admin par défaut
         initDefaultAdmin().then(function() {
             S.user = validateSession();
             renderAll();
